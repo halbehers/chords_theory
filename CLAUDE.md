@@ -1,0 +1,90 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+**Chords Theory** is a JUCE MIDI-effect plugin (Standalone / AU / AUv3 / VST3) that helps a user
+browse the diatonic chords of a key/scale and drag them straight into a DAW as MIDI. Built on
+[Nierika Plugin Template](https://github.com/halbehers/nierika_plugin_template) — the CI/build/
+test/packaging infrastructure, i18n mechanism, and themed `AppLayout`/`SettingsWindow` shell are
+inherited from there unchanged; everything under `Code/Include/Theory` and the chord/progression
+components under `Code/Include/Component` are this plugin's own domain logic on top of it.
+
+## Build / Tests
+
+Same CMake presets, CPM dependency fetching, Catch2 + `pluginval` CTest wiring as the template —
+see `README.md` for exact commands (`cmake --workflow --preset default`, `ctest --test-dir build`).
+`USE_LOCAL_NIERIKA_DSP` is `ON` (see `CMakeLists.txt`), building against the local
+`~/Development/nierika_dsp` checkout rather than a pinned remote release.
+
+## Architecture
+
+**Data layer** (`Code/Include/Theory`, `Code/Source/Theory`) — one structure per header:
+
+- `Key`, `Scale`, `Degree`, `ChordType` — enums mirroring `Assets/Data/chords.json`'s vocabulary,
+  each with `get*JsonKey`/`get*Label` (forward) and `parse*` (reverse) string conversions.
+- `NoteName`, `Chord`, `ScaleDegreeData`, `KeyScaleData` — the parsed chord database's shape.
+  `Chord::notes` preserves chords.json's array order (bass-first for inversions);
+  `ScaleDegreeData::chords` is sorted ascending by `popularityOrder` at load time, so `chords[0]`
+  is always the default (most popular) voicing. `Scale::MinorBlues` is structurally different —
+  6 scale notes and only degrees I/IV/V populated (no II/III/VI/VII); code touching `degrees` size
+  or degree lookup must account for this (see `KeyScaleData::findDegree`, which returns `nullptr`
+  for absent degrees rather than asserting).
+- `ChordDatabase` — parses the bundled `chords.json` (via `juce_add_binary_data`, same mechanism
+  as the `.lang` files) once into a process-wide singleton (`getInstance()`), indexed flat by
+  `key*10 + scale` for O(1) lookup.
+- `NoteConvertor` — stateless: `parsePitchClass` (note-name string → 0-11) and
+  `voiceChordCloseToMiddleC` (pitch classes in chord-array order → ascending MIDI notes, closed
+  voicing, lowest note at/below middle C — the first array entry becomes the bass, which correctly
+  handles inversions since bass-first order is preserved from the source data).
+- `MidiExporter` — writes temporary Standard MIDI Files (120bpm/4-4 fallback, 960 ticks/quarter,
+  one measure = 4 beats) for both a single chord and a whole progression.
+- `ProgressionSlot`/`ProgressionPreset`/`ProgressionPresetFactory`/`BuiltInProgressionPresets` —
+  presets reference degrees generically (not pinned chord types), resolved against whatever
+  voicing the user currently has selected for that degree at render/export time.
+  `ProgressionPresetLibrary` combines built-ins with user-saved presets, persisted via
+  `juce::PropertiesFile` in `AppSettings::getAppSupportDirectory()` (its own file/lock, separate
+  from `AppSettings`) — shared across every plugin instance and DAW project, same pattern as
+  `AppSettings` itself (including a public file-parameterized constructor for test isolation).
+- `SessionState`/`SessionStateSerializer` — pure data + `juce::ValueTree` (de)serialization for
+  everything a session needs to survive a DAW project close/reopen: Key, Scale, the chosen chord
+  per degree, and the full progression sequencer contents. Deliberately has zero UI/component
+  dependency so it's unit-testable without constructing any `nui::Component`.
+
+**UI layer** (`Code/Include/Component`) — `KeyScaleSelector` (two comboboxes) →
+`ChordDegreeBrowser` (one `ChordCard` per available degree) + `VoicingPicker` (popup, click a
+card) → `ProgressionSequencer` (a dynamically-sized, scrollable row of `ProgressionSlotView` with
+"+"/"-" step controls, `ProgressionPresetPicker`,
+`SavePresetPrompt`, `ProgressionDragHandle`). All follow the template's existing construction
+convention: `nui::Component` base, own a `nlayout::GridLayout<nui::Component> _layout { *this }`,
+`paint()`/`resized()` forward to it, react to `nui::Theme::getChangeBroadcaster()` and
+`AppLocalisation::getChangeBroadcaster()` via `changeListenerCallback`. Components bubble events up
+through small `Listener` interfaces (never reach sideways) — `AppLayout` is the top-level owner
+that wires them together, drives `Theory::MidiExporter`, and owns the drag-and-drop mechanism.
+
+**Drag-and-drop** (see `AppLayout::onChordDragStarted`/`onSlotFileDropped`): every chord/progression
+drag is the *same* native OS file drag
+(`juce::DragAndDropContainer::performExternalDragDropOfFiles`) regardless of where it lands — a
+DAW track (imports the temp `.mid` as a clip, no plugin code involved) or a `ProgressionSlotView`
+inside this same window (a `juce::FileDragAndDropTarget`, which can receive a drag that originated
+from its own process just as well as an external one). `AppLayout` keeps a `tempFilePath → Degree`
+map populated right before starting each drag, so an internal drop can be resolved back to a
+chord without re-parsing the MIDI file. `PluginAudioProcessorEditor` inherits
+`juce::DragAndDropContainer` explicitly (`juce::AudioProcessorEditor` doesn't).
+
+**Session-state persistence**: `AppLayout::syncStateToValueTree()` (called after every UI change
+that should persist) rebuilds a `SessionState` from the live UI and splices it as an extra child
+node into `_parameterManager.getState().state` — the same `juce::AudioProcessorValueTreeState`
+tree `PluginAudioProcessor::getStateInformation`/`setStateInformation` already serializes whole,
+so no changes were needed there. This is *separate* from `ProgressionPresetLibrary`'s persistence:
+session state is per-project (travels with the DAW project file), the preset library is global
+(shared across every project, like `AppSettings`).
+
+## Turning this into a different plugin
+
+Follow the template's own renaming checklist (see the upstream template's `CLAUDE.md`/`README.md`)
+for the CMake identity variables, `AppSettings.h`'s `InterProcessLock` id,
+`ProgressionPresetLibrary`'s lock id, packaging assets, and this file. The `Theory`/`Component`
+layers described above are this plugin's actual product — they'd need to be replaced, not renamed,
+for an unrelated plugin.

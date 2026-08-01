@@ -1,0 +1,157 @@
+name: Build, Test, Package
+
+on:
+  workflow_dispatch:
+  push:
+  pull_request:
+
+# When pushing new commits, cancel any running builds on that branch
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  BUILD_DIR: build
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build_and_test:
+    # Don't double-run same-repo PRs (the push event already covers those) - still run for fork PRs.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.event.pull_request.base.repo.full_name
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    # `secrets` can't be referenced directly in a step's `if:` (GitHub's expression parser doesn't
+    # expose that context there, only in `env:`/`with:` values) - these convert the presence check
+    # into job-level env vars instead, which the steps' `if:` below check.
+    env:
+      HAS_DEV_ID_APP_CERT: ${{ secrets.DEV_ID_APP_CERT != '' }}
+      HAS_AZURE_SIGNING: ${{ secrets.AZURE_TENANT_ID != '' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            os: macos-14
+            extra-flags: -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+          - name: Windows
+            os: windows-latest
+            extra-flags: ""
+
+    steps:
+      # Puts cl.exe/MSVC on PATH for the Ninja generator - Windows only, the Visual Studio
+      # generator wouldn't need this, but Ninja doesn't auto-detect the toolchain.
+      - name: Set up MSVC (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Install Ninja (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        run: brew install ninja
+
+      - name: Install Ninja + Inno Setup (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        run: |
+          choco install ninja
+          choco install innosetup
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      # CMake/packaging.cmake builds the installer as part of the normal Release build (see that
+      # file's comments) - Inno Setup needs to already be on PATH by the time "Build" runs below.
+
+      - name: Import Developer ID certificates (macOS)
+        uses: sudara/basic-macos-keychain-action@v1
+        id: keychain
+        if: ${{ runner.os == 'macOS' && env.HAS_DEV_ID_APP_CERT == 'true' }}
+        with:
+          dev-id-app-cert: ${{ secrets.DEV_ID_APP_CERT }}
+          dev-id-app-password: ${{ secrets.DEV_ID_APP_PASSWORD }}
+          dev-id-installer-cert: ${{ secrets.DEV_ID_INSTALLER_CERT }}
+          dev-id-installer-password: ${{ secrets.DEV_ID_INSTALLER_PASSWORD }}
+
+      - name: Configure
+        run: cmake -B ${{ env.BUILD_DIR }} -G Ninja -DCMAKE_BUILD_TYPE=Release ${{ matrix.extra-flags }} .
+
+      - name: Read in .env from CMake (see CMake/GitHubEnv.cmake)
+        run: |
+          cat .env
+          cat .env >> "$GITHUB_ENV"
+
+      - name: Build (also packages the installer - see CMake/packaging.cmake)
+        if: ${{ runner.os == 'macOS' }}
+        env:
+          # Real signing/notarization if these secrets are configured, else Scripts/package_macos.sh
+          # falls back to ad-hoc/unsigned automatically - see that script's comments.
+          DEVELOPER_ID_APPLICATION: ${{ secrets.DEVELOPER_ID_APPLICATION }}
+          DEVELOPER_ID_INSTALLER: ${{ secrets.DEVELOPER_ID_INSTALLER }}
+          KEYCHAIN_PATH: ${{ steps.keychain.outputs.keychain-path }}
+          NOTARIZATION_USERNAME: ${{ secrets.NOTARIZATION_USERNAME }}
+          NOTARIZATION_PASSWORD: ${{ secrets.NOTARIZATION_PASSWORD }}
+          NOTARIZATION_TEAM_ID: ${{ secrets.TEAM_ID }}
+        run: cmake --build ${{ env.BUILD_DIR }} --config Release
+
+      - name: Build (also packages the installer - see CMake/packaging.cmake)
+        if: ${{ runner.os == 'Windows' }}
+        run: cmake --build ${{ env.BUILD_DIR }} --config Release
+
+      - name: Test (Catch2 + pluginval)
+        working-directory: ${{ env.BUILD_DIR }}
+        run: ctest --output-on-failure
+
+      - name: Codesign with Azure Artifact Signing (Windows)
+        if: ${{ runner.os == 'Windows' && env.HAS_AZURE_SIGNING == 'true' }}
+        uses: azure/artifact-signing-action@v2
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: ${{ secrets.AZURE_ENDPOINT }}
+          signing-account-name: ${{ secrets.AZURE_CODE_SIGNING_NAME }}
+          certificate-profile-name: ${{ secrets.AZURE_CERT_PROFILE_NAME }}
+          files-folder: ${{ env.BUILD_DIR }}/Packaging
+          files-folder-filter: exe
+          # Unsigned otherwise - installable locally, will show a SmartScreen
+          # "unrecognized publisher" prompt until real signing credentials are configured.
+
+      - name: Upload installer (macOS)
+        if: ${{ runner.os == 'macOS' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.PRODUCT_NAME }}-${{ env.VERSION }}-macOS.pkg
+          path: ${{ env.BUILD_DIR }}/Packaging/*.pkg
+
+      - name: Upload installer (Windows)
+        if: ${{ runner.os == 'Windows' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.PRODUCT_NAME }}-${{ env.VERSION }}-Windows.exe
+          path: ${{ env.BUILD_DIR }}/Packaging/*.exe
+
+  release:
+    if: contains(github.ref, 'tags/v')
+    runs-on: ubuntu-latest
+    needs: build_and_test
+    # Default GITHUB_TOKEN is read-only unless a job explicitly asks for more - without this,
+    # softprops/action-gh-release fails with "Resource not accessible by integration" (403).
+    permissions:
+      contents: write
+    steps:
+      - name: Get artifacts
+        uses: actions/download-artifact@v8
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          prerelease: true
+          # download-artifact puts each upload in its own dir - globs sidestep passing the
+          # exact filenames (which include the version) through to this job.
+          files: |
+            */*.pkg
+            */*.exe
