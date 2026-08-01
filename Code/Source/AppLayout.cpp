@@ -1,5 +1,6 @@
 #include "AppLayout.h"
 
+#include "AppLocalisation.h"
 #include "Theory/ChordDatabase.h"
 #include "Theory/MidiExporter.h"
 #include "Theory/NoteConvertor.h"
@@ -13,6 +14,8 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynth
     _keyScaleSelector("key-scale-selector"),
     _chordBrowser("chord-degree-browser"),
     _progressionSequencer("progression-sequencer", [this](const theory::ProgressionSlot& slot) { return _chordBrowser.resolveSlot(slot); }),
+    _synthEditor(parameterManager),
+    _mainSection("main-section", parameterManager),
     _windowsManager(*this)
 {
     _settings.setIconSize(24.f);
@@ -27,6 +30,28 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynth
     _progressionSequencer.addListener(this);
     _progressionSequencer.setScale(_keyScaleSelector.getScale());
 
+    AppLocalisation::getChangeBroadcaster().addChangeListener(this);
+    _mainSection.addOnPanelChangedListener(this);
+
+    // "Chords" tab: renames Section's own default MAIN_PANEL_ID panel rather than leaving an
+    // orphan "Main" tab - same row heights as the old top-level rows 1-3, just nested one level
+    // deeper now (see the header comment on _mainSection for why this has to be a *new*, nested
+    // Section rather than tabbing this class's own inherited grid).
+    _mainSection.setPanelName(MAIN_PANEL_ID, juce::translate("chords_tab_label").toStdString());
+    _mainSection.addPanel("synth-tab", juce::translate("synth_tab_label").toStdString());
+
+    _mainSection.getLayout().setDisplayGrid(false);
+    _mainSection.getLayout().init({ 1, 1, 1 }, { 1 });
+    _mainSection.getLayout().setFixedRowHeight(0, 80.f);
+    _mainSection.getLayout().setFixedRowHeight(1, 80.f);
+    _mainSection.getLayout().addComponent(_chordBrowser, 0, 0, 1, 1);
+    _mainSection.getLayout().addComponent(_voicingSelector, 1, 0, 1, 1);
+    _mainSection.getLayout().addComponent(_progressionSequencer, 2, 0, 1, 1);
+
+    _mainSection.getLayout("synth-tab").setDisplayGrid(false);
+    _mainSection.getLayout("synth-tab").init({ 1 }, { 1 });
+    _mainSection.getLayout("synth-tab").addComponent(_synthEditor, 0, 0, 1, 1);
+
     getLayout().setGap(16.f);
     getLayout().setDisplayGrid(false);
     getLayout().setResizableLineConfiguration({ .displayLine = false });
@@ -37,18 +62,14 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynth
     getLayout().setMargin(24.f, 0.f, 24.f, 24.f);
 #endif
 
-    getLayout().init({ 1, 1, 1, 1 }, { 1, 1 });
+    getLayout().init({ 1, 1 }, { 1, 1 }); // row0: settings/key-scale (fixed height), row1: _mainSection (flexible)
 
     getLayout().setFixedRowHeight(0, 60.f);
-    getLayout().setFixedRowHeight(1, 80.f);
-    getLayout().setFixedRowHeight(2, 80.f);
     getLayout().setFixedColumnWidth(0, 32.f);
 
     getLayout().addComponent(_settings, 0, 0, 1, 1);
     getLayout().addComponent(_keyScaleSelector, 0, 1, 1, 1);
-    getLayout().addComponent(_chordBrowser, 1, 0, 2, 1);
-    getLayout().addComponent(_voicingSelector, 2, 0, 2, 1);
-    getLayout().addComponent(_progressionSequencer, 3, 0, 2, 1);
+    getLayout().addComponent(_mainSection, 1, 0, 2, 1);
 
     _voicingSelector.setVisible(false); // must come after addComponent(), which calls addAndMakeVisible() internally
 
@@ -57,10 +78,33 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynth
 
 AppLayout::~AppLayout()
 {
+    AppLocalisation::getChangeBroadcaster().removeChangeListener(this);
+    _mainSection.removeListener(this);
+
     _settings.removeListener(this);
     _keyScaleSelector.removeListener(this);
     _chordBrowser.removeListener(this);
     _progressionSequencer.removeListener(this);
+}
+
+void AppLayout::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    nlayout::AppLayout::changeListenerCallback(source);
+
+    if (source != &AppLocalisation::getChangeBroadcaster())
+        return;
+
+    _mainSection.setPanelName(MAIN_PANEL_ID, juce::translate("chords_tab_label").toStdString());
+    _mainSection.setPanelName("synth-tab", juce::translate("synth_tab_label").toStdString());
+}
+
+void AppLayout::onPanelChanged(const std::string& newPanelID)
+{
+    if (newPanelID != MAIN_PANEL_ID)
+        return;
+
+    _voicingSelector.setVisible(_openVoicingDegree.has_value());
+    updateVoicingSelectorArrow();
 }
 
 void AppLayout::resized()

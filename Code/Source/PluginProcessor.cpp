@@ -26,7 +26,8 @@ PluginAudioProcessor::PluginAudioProcessor()
                     { nui::Theme::INVERTED_TEXT, juce::Colour(0xFFFFFFFF) },
                     { nui::Theme::DISABLED, juce::Colour(0xFFA9A9A9) },
                     { nui::Theme::PRIMARY, juce::Colour(0xFF272727) },
-                    { nui::Theme::ACCENT, juce::Colour(0xFF8A8A8E) },
+                    { nui::Theme::ACCENT, juce::Colour(0xFF53F4FB) },
+                    { nui::Theme::SECONDARY_ACCENT, juce::Colour(0xFFE1415B) },
                     { nui::Theme::BACKGROUND, juce::Colour(0xFF0F0F0F) },
                     { nui::Theme::SECONDARY_BACKGROUND, juce::Colour(0xFF191819) },
                     { nui::Theme::BORDER, juce::Colour(0xFF303030) },
@@ -39,7 +40,8 @@ PluginAudioProcessor::PluginAudioProcessor()
                     { nui::Theme::INVERTED_TEXT, juce::Colour(0xFFFFFFFF) },
                     { nui::Theme::DISABLED, juce::Colour(0xFF616161) },
                     { nui::Theme::PRIMARY, juce::Colour(0xFFCAC8C7) },
-                    { nui::Theme::ACCENT, juce::Colour(0xFF6E6E73) },
+                    { nui::Theme::ACCENT, juce::Colour(0xFF39B0C1) },
+                    { nui::Theme::SECONDARY_ACCENT, juce::Colour(0xFFE17C8C) },
                     { nui::Theme::BACKGROUND, juce::Colour(0xFFFFFFFF) },
                     { nui::Theme::SECONDARY_BACKGROUND, juce::Colour(0xFFF0EDEC) },
                     { nui::Theme::BORDER, juce::Colour(0xFFA5A5A5) },
@@ -133,7 +135,7 @@ void PluginAudioProcessor::changeProgramName(int index, const juce::String& newN
 //==============================================================================
 void PluginAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock)
 {
-    _synthEngine.prepare(sampleRate, samplesPerBlock);
+    _synthEngine.prepare(sampleRate, samplesPerBlock, getTotalNumOutputChannels());
 }
 
 void PluginAudioProcessor::releaseResources()
@@ -173,7 +175,7 @@ void PluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
     juce::ScopedNoDenormals noDenormals;
 
     buffer.clear();
-    _synthEngine.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
+    _synthEngine.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples(), getPlayHead());
 }
 
 //==============================================================================

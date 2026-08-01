@@ -1,5 +1,7 @@
 #include "Parameters.h"
 
+#include <cmath>
+
 void Parameters::registerPluginParameters(PluginAudioProcessor* audioProcessor)
 {
     audioProcessor->registerParameter
@@ -12,6 +14,163 @@ void Parameters::registerPluginParameters(PluginAudioProcessor* audioProcessor)
             );
 }
 
+void Parameters::registerEnvelopeParameters(PluginAudioProcessor* audioProcessor)
+{
+    // A raw pointer to the long-lived VoiceSharedState (owned by ChordSynthEngine, itself a
+    // member of audioProcessor with the plugin's full lifetime) - captured by value into each
+    // onChange lambda below. Capturing the reference returned by getSharedState() directly
+    // (rather than through a pointer) would capture a copy of VoiceSharedState itself, which
+    // doesn't compile (std::atomic is non-copyable) and wouldn't be what's wanted anyway.
+    auto* sharedState = &audioProcessor->getSynthEngine().getSharedState();
+
+    audioProcessor->registerParameter(
+        ENVELOPE_DELAY_MS_ID, "Envelope Delay", ENVELOPE_DELAY_MS_DEFAULT, ENVELOPE_TIME_MS_MIN, ENVELOPE_TIME_MS_MAX,
+        [sharedState](float value) { sharedState->envelopeDelayMs.store(value, std::memory_order_relaxed); },
+        "Time before the envelope starts rising, in milliseconds.");
+
+    audioProcessor->registerParameter(
+        ENVELOPE_ATTACK_MS_ID, "Envelope Attack", ENVELOPE_ATTACK_MS_DEFAULT, ENVELOPE_TIME_MS_MIN, ENVELOPE_TIME_MS_MAX,
+        [sharedState](float value) { sharedState->envelopeAttackMs.store(value, std::memory_order_relaxed); },
+        "Time to rise from silence to full level, in milliseconds.");
+
+    audioProcessor->registerParameter(
+        ENVELOPE_HOLD_MS_ID, "Envelope Hold", ENVELOPE_HOLD_MS_DEFAULT, ENVELOPE_TIME_MS_MIN, ENVELOPE_TIME_MS_MAX,
+        [sharedState](float value) { sharedState->envelopeHoldMs.store(value, std::memory_order_relaxed); },
+        "Time to hold at full level before decaying, in milliseconds.");
+
+    audioProcessor->registerParameter(
+        ENVELOPE_DECAY_MS_ID, "Envelope Decay", ENVELOPE_DECAY_MS_DEFAULT, ENVELOPE_TIME_MS_MIN, ENVELOPE_TIME_MS_MAX,
+        [sharedState](float value) { sharedState->envelopeDecayMs.store(value, std::memory_order_relaxed); },
+        "Time to fall from full level to the sustain level, in milliseconds.");
+
+    audioProcessor->registerParameter(
+        ENVELOPE_SUSTAIN_PERCENT_ID, "Envelope Sustain", ENVELOPE_SUSTAIN_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [sharedState](float value) { sharedState->envelopeSustainPercent.store(value, std::memory_order_relaxed); },
+        "Level held for as long as a note is held, as a percentage of full level.");
+
+    audioProcessor->registerParameter(
+        ENVELOPE_RELEASE_MS_ID, "Envelope Release", ENVELOPE_RELEASE_MS_DEFAULT, ENVELOPE_TIME_MS_MIN, ENVELOPE_TIME_MS_MAX,
+        [sharedState](float value) { sharedState->envelopeReleaseMs.store(value, std::memory_order_relaxed); },
+        "Time to fall to silence after a note is released, in milliseconds.");
+}
+
+void Parameters::registerFilterParameters(PluginAudioProcessor* audioProcessor)
+{
+    auto* sharedState = &audioProcessor->getSynthEngine().getSharedState();
+
+    audioProcessor->registerParameter<int>(
+        std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID { FILTER_TYPE_ID, 1 }, "Filter Type",
+            juce::StringArray { "Low-pass", "High-pass", "Band-pass" }, FILTER_TYPE_DEFAULT),
+        ndsp::IParameter::TYPE_INT, FILTER_TYPE_DEFAULT, 0, 2,
+        [sharedState](int value) { sharedState->filterType.store(value, std::memory_order_relaxed); },
+        "Filter type: low-pass, high-pass, or band-pass.");
+
+    audioProcessor->registerParameter<int>(
+        std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID { FILTER_SLOPE_ID, 1 }, "Filter Slope",
+            juce::StringArray { "12 dB/oct", "24 dB/oct" }, FILTER_SLOPE_DEFAULT),
+        ndsp::IParameter::TYPE_INT, FILTER_SLOPE_DEFAULT, 0, 1,
+        [sharedState](int value) { sharedState->filterSlope.store(value, std::memory_order_relaxed); },
+        "Filter steepness: 12 or 24 decibels per octave.");
+
+    // setSkewForCentre puts 1kHz at the knob's midpoint - the standard "feels logarithmic"
+    // convention for a frequency control, computed by JUCE rather than hand-derived skew math.
+    juce::NormalisableRange<float> cutoffRange(FILTER_CUTOFF_HZ_MIN, FILTER_CUTOFF_HZ_MAX);
+    cutoffRange.setSkewForCentre(1000.0f);
+    audioProcessor->registerParameter<float>(
+        std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { FILTER_CUTOFF_HZ_ID, 1 }, "Filter Cutoff", cutoffRange, FILTER_CUTOFF_HZ_DEFAULT),
+        ndsp::IParameter::TYPE_FLOAT, FILTER_CUTOFF_HZ_DEFAULT, FILTER_CUTOFF_HZ_MIN, FILTER_CUTOFF_HZ_MAX,
+        [sharedState](float value) { sharedState->filterCutoffHz.store(value, std::memory_order_relaxed); },
+        "Filter cutoff frequency, in Hz.");
+
+    audioProcessor->registerParameter(
+        FILTER_RESONANCE_ID, "Filter Resonance", FILTER_RESONANCE_DEFAULT, FILTER_RESONANCE_MIN, FILTER_RESONANCE_MAX,
+        [sharedState](float value) { sharedState->filterResonance.store(value, std::memory_order_relaxed); },
+        "Filter resonance - how strongly the response peaks around the cutoff frequency.");
+
+    audioProcessor->registerParameter(
+        FILTER_DRIVE_DB_ID, "Filter Drive", FILTER_DRIVE_DB_DEFAULT, 0.0f, FILTER_DRIVE_DB_MAX,
+        [sharedState](float value) { sharedState->filterDriveDb.store(value, std::memory_order_relaxed); },
+        "Pre-filter saturation, in decibels.");
+
+    audioProcessor->registerParameter(
+        FILTER_MIX_PERCENT_ID, "Filter Mix", FILTER_MIX_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [sharedState](float value) { sharedState->filterMixPercent.store(value, std::memory_order_relaxed); },
+        "Blend between the unfiltered and filtered signal, as a percentage.");
+
+    audioProcessor->registerParameter(
+        FILTER_KEY_TRACK_PERCENT_ID, "Filter Key Track", FILTER_KEY_TRACK_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [sharedState](float value) { sharedState->filterKeyTrackPercent.store(value, std::memory_order_relaxed); },
+        "How much the cutoff frequency follows the played note's pitch, as a percentage.");
+}
+
+void Parameters::registerLfoParameters(PluginAudioProcessor* audioProcessor)
+{
+    auto* sharedState = &audioProcessor->getSynthEngine().getSharedState();
+
+    audioProcessor->registerParameter<int>(
+        std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID { LFO_SHAPE_ID, 1 }, "LFO Shape",
+            juce::StringArray { "Sine", "Triangle", "Saw", "Square" }, LFO_SHAPE_DEFAULT),
+        ndsp::IParameter::TYPE_INT, LFO_SHAPE_DEFAULT, 0, 3,
+        [sharedState](int value) { sharedState->lfoShape.store(value, std::memory_order_relaxed); },
+        "LFO waveform shape.");
+
+    juce::NormalisableRange<float> rateRange(LFO_RATE_HZ_MIN, LFO_RATE_HZ_MAX);
+    rateRange.setSkewForCentre(1.0f);
+    audioProcessor->registerParameter<float>(
+        std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { LFO_RATE_HZ_ID, 1 }, "LFO Rate", rateRange, LFO_RATE_HZ_DEFAULT),
+        ndsp::IParameter::TYPE_FLOAT, LFO_RATE_HZ_DEFAULT, LFO_RATE_HZ_MIN, LFO_RATE_HZ_MAX,
+        [sharedState](float value) { sharedState->lfoRateHz.store(value, std::memory_order_relaxed); },
+        "LFO rate, in Hz (used when tempo sync is off).");
+
+    audioProcessor->registerParameter(
+        LFO_SYNC_ENABLED_ID, "LFO Tempo Sync", LFO_SYNC_ENABLED_DEFAULT,
+        [sharedState](bool value) { sharedState->lfoSyncEnabled.store(value, std::memory_order_relaxed); },
+        "Sync the LFO rate to the host tempo instead of a free rate in Hz.");
+
+    // Bound to a TimingDial (not a Cycler), which - like every Dial subclass - reads its own
+    // min/max/default via ParameterManager::getParameterMinValue<float>/etc, so this must be
+    // registered through the float-typed template even though the raw values are always whole
+    // numbers. Uses the raw 1-based ndsp::Timing::NoteTiming range directly (interval=1 keeps it
+    // stepped to whole values) - TimingDial::getTextFromValue expects that, not a 0-based index.
+    juce::NormalisableRange<float> syncDivisionRange(LFO_SYNC_DIVISION_MIN, LFO_SYNC_DIVISION_MAX, 1.0f);
+    audioProcessor->registerParameter<float>(
+        std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { LFO_SYNC_DIVISION_ID, 1 }, "LFO Sync Division", syncDivisionRange, LFO_SYNC_DIVISION_DEFAULT),
+        ndsp::IParameter::TYPE_FLOAT, LFO_SYNC_DIVISION_DEFAULT, LFO_SYNC_DIVISION_MIN, LFO_SYNC_DIVISION_MAX,
+        [sharedState](float value) { sharedState->lfoSyncDivision.store(static_cast<int>(std::round(value)), std::memory_order_relaxed); },
+        "Note division the LFO syncs to when tempo sync is on.");
+
+    audioProcessor->registerParameter(
+        LFO_MODE_ID, "LFO Mode", LFO_MODE_DEFAULT,
+        [sharedState](bool value) { sharedState->lfoMode.store(value ? 1 : 0, std::memory_order_relaxed); },
+        "Trigger: phase resets on every note. Free: phase runs continuously, shared across notes.");
+
+    audioProcessor->registerParameter(
+        LFO_SMOOTH_PERCENT_ID, "LFO Smooth", LFO_SMOOTH_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [sharedState](float value) { sharedState->lfoSmoothPercent.store(value, std::memory_order_relaxed); },
+        "Rounds the LFO waveform's corners toward a sine shape, as a percentage.");
+
+    audioProcessor->registerParameter(
+        LFO_DELAY_MS_ID, "LFO Delay", LFO_DELAY_MS_DEFAULT, 0.0f, 10000.0f,
+        [sharedState](float value) { sharedState->lfoDelayMs.store(value, std::memory_order_relaxed); },
+        "Time after a note starts before the LFO begins modulating, in milliseconds.");
+
+    audioProcessor->registerParameter(
+        LFO_STEREO_PERCENT_ID, "LFO Stereo", LFO_STEREO_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [sharedState](float value) { sharedState->lfoStereoPercent.store(value, std::memory_order_relaxed); },
+        "Phase offset between the left and right channels, as a percentage.");
+
+    audioProcessor->registerParameter(
+        LFO_DEPTH_PERCENT_ID, "LFO Depth", LFO_DEPTH_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [sharedState](float value) { sharedState->lfoDepthPercent.store(value, std::memory_order_relaxed); },
+        "How strongly the LFO modulates the filter cutoff, as a percentage.");
+}
+
 void Parameters::registerSection(Section section, PluginAudioProcessor* audioProcessor)
 {
     switch (section)
@@ -19,10 +178,22 @@ void Parameters::registerSection(Section section, PluginAudioProcessor* audioPro
         case PLUGIN:
             registerPluginParameters(audioProcessor);
             break;
+        case ENVELOPE:
+            registerEnvelopeParameters(audioProcessor);
+            break;
+        case FILTER:
+            registerFilterParameters(audioProcessor);
+            break;
+        case LFO:
+            registerLfoParameters(audioProcessor);
+            break;
     }
 }
 
 void Parameters::registerAllSections(PluginAudioProcessor* audioProcessor)
 {
     registerSection(Section::PLUGIN, audioProcessor);
+    registerSection(Section::ENVELOPE, audioProcessor);
+    registerSection(Section::FILTER, audioProcessor);
+    registerSection(Section::LFO, audioProcessor);
 }

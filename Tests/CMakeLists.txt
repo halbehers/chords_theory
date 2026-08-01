@@ -14,6 +14,10 @@ add_executable(${PROJECT_NAME}_Tests
         ProgressionSequencerTests.cpp
         ProgressionPresetIntegrationTests.cpp
         ProgressionDragHandleTests.cpp
+        DahdsrEnvelopeTests.cpp
+        VoiceFilterTests.cpp
+        LfoTests.cpp
+        SectionPanelChangeTests.cpp
         main.cpp
 )
 

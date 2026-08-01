@@ -8,8 +8,8 @@ PluginAudioProcessorEditor::PluginAudioProcessorEditor(PluginAudioProcessor& p):
     addAndMakeVisible(_layout, 10);
 
     setResizable(true, false); // false: no custom corner-grip overlay, the OS window frame already provides edge/corner resizing
-    setResizeLimits(960, 480, 1920, 1200);
-    setSize(960, 640);
+    setResizeLimits(1100, 700, 1920, 1200);
+    setSize(1100, 700);
 }
 
 void PluginAudioProcessorEditor::setBypass(bool isBypassed)

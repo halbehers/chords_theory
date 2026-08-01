@@ -9,6 +9,20 @@ namespace
 {
     constexpr double kSampleRate = 44100.0;
     constexpr int kBlockSize = 512;
+
+    class FakePlayHead : public juce::AudioPlayHead
+    {
+    public:
+        explicit FakePlayHead(double bpm)
+        {
+            _position.setBpm(bpm);
+        }
+
+        juce::Optional<PositionInfo> getPosition() const override { return _position; }
+
+    private:
+        PositionInfo _position;
+    };
 }
 
 TEST_CASE("ChordSynthEngine::previewChord produces audible output while sounding", "[ChordSynthEngine]")
@@ -79,4 +93,30 @@ TEST_CASE("ChordSynthEngine::previewChord auto-releases and falls silent after i
     }
 
     CHECK(lastMagnitude == Catch::Approx(0.0f));
+}
+
+TEST_CASE("ChordSynthEngine: with no playhead, hostBpm falls back to 120", "[ChordSynthEngine]")
+{
+    ChordSynthEngine engine;
+    engine.prepare(kSampleRate, kBlockSize);
+
+    juce::AudioBuffer<float> buffer(2, kBlockSize);
+    juce::MidiBuffer midi;
+    engine.renderNextBlock(buffer, midi, 0, kBlockSize); // playHead defaults to nullptr
+
+    CHECK(engine.getSharedState().hostBpm == Catch::Approx(120.0));
+}
+
+TEST_CASE("ChordSynthEngine: a playhead reporting a real tempo is used as hostBpm", "[ChordSynthEngine]")
+{
+    ChordSynthEngine engine;
+    engine.prepare(kSampleRate, kBlockSize);
+
+    juce::AudioBuffer<float> buffer(2, kBlockSize);
+    juce::MidiBuffer midi;
+
+    FakePlayHead playHead(140.0);
+    engine.renderNextBlock(buffer, midi, 0, kBlockSize, &playHead);
+
+    CHECK(engine.getSharedState().hostBpm == Catch::Approx(140.0));
 }

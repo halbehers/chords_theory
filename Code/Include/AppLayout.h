@@ -10,6 +10,7 @@
 #include "Component/KeyScaleSelector.h"
 #include "Component/ProgressionSequencer.h"
 #include "Component/SettingsWindow.h"
+#include "Component/SynthEditor.h"
 #include "Component/VoicingSelector.h"
 #include "Theory/Degree.h"
 
@@ -17,7 +18,8 @@ class AppLayout final : public nlayout::AppLayout,
                          public nelement::SVGButton::OnClickListener,
                          public component::KeyScaleSelector::Listener,
                          public component::ChordDegreeBrowser::Listener,
-                         public component::ProgressionSequencer::Listener
+                         public component::ProgressionSequencer::Listener,
+                         public nui::Section::OnPanelChangedListener
 {
 public:
     AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynthEngine& synthEngine);
@@ -28,6 +30,8 @@ public:
     void onButtonClick(const std::string& componentID) override;
 
 private:
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+
     void onKeyScaleChanged(theory::Key key, theory::Scale scale) override;
     void onChordChanged(theory::Degree degree, const theory::Chord& newChord) override;
     void onChordDragStarted(theory::Degree degree, const theory::Chord& chord) override;
@@ -38,6 +42,13 @@ private:
     void onProgressionDragStarted() override;
     void onSlotsChanged() override;
     void onChordPreviewRequested(const theory::Chord& chord) override;
+
+    // _mainSection's own panel-switch mechanism (GridLayout::setVisible()) unconditionally shows
+    // every component registered in a panel the moment it becomes active again - including
+    // _voicingSelector, which has its own independent open/closed state unrelated to which tab is
+    // showing. Re-asserts that real state whenever the Chords tab becomes active again, so closing
+    // the voicing selector then switching to Synth and back doesn't silently reopen it.
+    void onPanelChanged(const std::string& newPanelID) override;
 
     // Shared by both onChordPreviewRequested overrides above.
     void previewChord(const theory::Chord& chord);
@@ -64,6 +75,13 @@ private:
     component::ChordDegreeBrowser _chordBrowser;
     component::VoicingSelector _voicingSelector { "voicing-selector" };
     component::ProgressionSequencer _progressionSequencer;
+    component::SynthEditor _synthEditor;
+
+    // Owns the "Chords"/"Synth" tab switcher - everything above except _settings/_keyScaleSelector
+    // (row 0, always visible) lives inside one of its two panels. A *new*, nested Section, not a
+    // reuse of this class's own inherited nlayout::AppLayout/Section grid (which is what row 0
+    // itself lives in) - see AppLayout.cpp for why tabbing the root directly would also hide row 0.
+    nui::Section _mainSection;
 
     nlayout::WindowsManager _windowsManager;
 

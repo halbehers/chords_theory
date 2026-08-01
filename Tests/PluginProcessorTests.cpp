@@ -22,6 +22,28 @@ TEST_CASE("Parameters ID constants are all non-empty and mutually distinct", "[P
     // is a correctness net that stays useful as more parameters get added on top of the template.
     const std::vector<std::string> ids {
         Parameters::PLUGIN_ENABLED_ID,
+        Parameters::ENVELOPE_DELAY_MS_ID,
+        Parameters::ENVELOPE_ATTACK_MS_ID,
+        Parameters::ENVELOPE_HOLD_MS_ID,
+        Parameters::ENVELOPE_DECAY_MS_ID,
+        Parameters::ENVELOPE_SUSTAIN_PERCENT_ID,
+        Parameters::ENVELOPE_RELEASE_MS_ID,
+        Parameters::FILTER_TYPE_ID,
+        Parameters::FILTER_SLOPE_ID,
+        Parameters::FILTER_CUTOFF_HZ_ID,
+        Parameters::FILTER_RESONANCE_ID,
+        Parameters::FILTER_DRIVE_DB_ID,
+        Parameters::FILTER_MIX_PERCENT_ID,
+        Parameters::FILTER_KEY_TRACK_PERCENT_ID,
+        Parameters::LFO_SHAPE_ID,
+        Parameters::LFO_RATE_HZ_ID,
+        Parameters::LFO_SYNC_ENABLED_ID,
+        Parameters::LFO_SYNC_DIVISION_ID,
+        Parameters::LFO_MODE_ID,
+        Parameters::LFO_SMOOTH_PERCENT_ID,
+        Parameters::LFO_DELAY_MS_ID,
+        Parameters::LFO_STEREO_PERCENT_ID,
+        Parameters::LFO_DEPTH_PERCENT_ID,
     };
 
     for (const auto& id : ids)
@@ -38,6 +60,10 @@ TEST_CASE("PluginAudioProcessor round-trips parameter state via getStateInformat
     auto* enabledParameter = source.getState().getParameter(Parameters::PLUGIN_ENABLED_ID);
     REQUIRE(enabledParameter != nullptr);
     enabledParameter->setValueNotifyingHost(0.0f); // flips PLUGIN_ENABLED_ID away from its default (true)
+
+    auto* releaseParameter = dynamic_cast<juce::RangedAudioParameter*>(source.getState().getParameter(Parameters::ENVELOPE_RELEASE_MS_ID));
+    REQUIRE(releaseParameter != nullptr);
+    releaseParameter->setValueNotifyingHost(releaseParameter->convertTo0to1(999.0f)); // flips away from its default (200)
 
     // AudioProcessorValueTreeState only flushes parameter values into its internal state
     // ValueTree periodically (an internal 10Hz timer), not synchronously on
@@ -57,4 +83,24 @@ TEST_CASE("PluginAudioProcessor round-trips parameter state via getStateInformat
     const auto* restoredValue = restored.getState().getRawParameterValue(Parameters::PLUGIN_ENABLED_ID);
     REQUIRE(restoredValue != nullptr);
     CHECK(restoredValue->load() == Catch::Approx(0.0f));
+
+    const auto* restoredReleaseValue = restored.getState().getRawParameterValue(Parameters::ENVELOPE_RELEASE_MS_ID);
+    REQUIRE(restoredReleaseValue != nullptr);
+    CHECK(restoredReleaseValue->load() == Catch::Approx(999.0f));
+}
+
+TEST_CASE("PluginAudioProcessor: setting the envelope-attack-ms parameter immediately updates the synth engine's shared state", "[PluginProcessor]")
+{
+    // Unlike the ValueTree-serialization round-trip above (debounced by an internal 10Hz timer),
+    // the onChange callback wired in Parameters::registerEnvelopeParameters fires synchronously
+    // on setValueNotifyingHost() - see VoiceSharedState's doc comment for why - so no message-loop
+    // pump is needed here.
+    PluginAudioProcessor processor;
+
+    auto* attackParameter = dynamic_cast<juce::RangedAudioParameter*>(processor.getState().getParameter(Parameters::ENVELOPE_ATTACK_MS_ID));
+    REQUIRE(attackParameter != nullptr);
+
+    attackParameter->setValueNotifyingHost(attackParameter->convertTo0to1(1234.0f));
+
+    CHECK(processor.getSynthEngine().getSharedState().envelopeAttackMs.load() == Catch::Approx(1234.0f));
 }
