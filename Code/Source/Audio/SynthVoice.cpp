@@ -1,8 +1,6 @@
-#include "Audio/SineSynthVoice.h"
+#include "Audio/SynthVoice.h"
 
-#include <cmath>
-
-#include "Audio/SineSynthSound.h"
+#include "Audio/SynthSound.h"
 
 namespace audio
 {
@@ -14,24 +12,19 @@ namespace
     constexpr float kMaxLfoDepthOctaves = 4.0f; // cutoff swing at lfo-depth-percent == 100
 }
 
-SineSynthVoice::SineSynthVoice(VoiceSharedState& sharedState):
+SynthVoice::SynthVoice(VoiceSharedState& sharedState):
     _sharedState(sharedState)
 {
 }
 
-bool SineSynthVoice::canPlaySound(juce::SynthesiserSound* sound)
+bool SynthVoice::canPlaySound(juce::SynthesiserSound* sound)
 {
-    return dynamic_cast<SineSynthSound*>(sound) != nullptr;
+    return dynamic_cast<SynthSound*>(sound) != nullptr;
 }
 
-void SineSynthVoice::startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound* sound, int currentPitchWheelPosition)
+void SynthVoice::startNote(int midiNoteNumber, float velocity, juce::SynthesiserSound* sound, int currentPitchWheelPosition)
 {
     juce::ignoreUnused(velocity, sound, currentPitchWheelPosition);
-
-    _phase = 0.0;
-
-    const auto frequencyHz = juce::MidiMessage::getMidiNoteInHertz(midiNoteNumber);
-    _phaseIncrement = juce::MathConstants<double>::twoPi * frequencyHz / getSampleRate();
 
     _envelope.reset();
     _envelope.setParameters(readEnvelopeParameters());
@@ -41,10 +34,15 @@ void SineSynthVoice::startNote(int midiNoteNumber, float velocity, juce::Synthes
     _filter.setKeyTrackedNote(midiNoteNumber, kKeyTrackReferenceNote);
     _filter.setBlockParameters(readFilterParameters());
 
+    _oscillator1.noteOn(midiNoteNumber);
+    _oscillator1.setBlockParameters(readOscillatorParameters(_sharedState.oscillator1));
+    _oscillator2.noteOn(midiNoteNumber);
+    _oscillator2.setBlockParameters(readOscillatorParameters(_sharedState.oscillator2));
+
     _lfo.noteOn();
 }
 
-void SineSynthVoice::stopNote(float velocity, bool allowTailOff)
+void SynthVoice::stopNote(float velocity, bool allowTailOff)
 {
     juce::ignoreUnused(velocity);
 
@@ -61,29 +59,39 @@ void SineSynthVoice::stopNote(float velocity, bool allowTailOff)
     }
 }
 
-void SineSynthVoice::pitchWheelMoved(int /*newPitchWheelValue*/) {}
-void SineSynthVoice::controllerMoved(int /*controllerNumber*/, int /*newControllerValue*/) {}
+void SynthVoice::pitchWheelMoved(int /*newPitchWheelValue*/) {}
+void SynthVoice::controllerMoved(int /*controllerNumber*/, int /*newControllerValue*/) {}
 
-void SineSynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples)
+void SynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int startSample, int numSamples)
 {
     if (!_envelope.isActive())
         return;
 
     // Block-rate re-snapshot, separate from the once-at-startNote envelope/key-track snapshot -
-    // this is what makes turning the cutoff/resonance/drive/mix/type/slope/LFO knobs audible on
-    // an already-sounding, held note (see VoiceSharedState's doc comment for the cadence rationale).
+    // this is what makes turning the cutoff/resonance/drive/mix/type/slope/LFO/oscillator knobs
+    // audible on an already-sounding, held note (see VoiceSharedState's doc comment for the
+    // cadence rationale).
     _filter.setBlockParameters(readFilterParameters());
     _lfo.setParameters(readLfoParameters(), _sharedState.hostBpm, _sharedState.freeLfoPhase01);
+    _oscillator1.setBlockParameters(readOscillatorParameters(_sharedState.oscillator1));
+    _oscillator2.setBlockParameters(readOscillatorParameters(_sharedState.oscillator2));
 
     const auto numChannels = outputBuffer.getNumChannels();
 
     for (int sample = 0; sample < numSamples; ++sample)
     {
         const auto envelopeValue = _envelope.getNextSample();
-        const auto dryValue = static_cast<float>(std::sin(_phase)) * envelopeValue * kVoiceGain;
+
+        const auto osc1Sample = _oscillator1.getNextSample();
+        const auto osc2Sample = _oscillator2.getNextSample();
+        // Simple addition for now - this is the single point a future combine-mode parameter
+        // (parallel/serial/FM/...) would change; deliberately not abstracted further until that
+        // parameter actually exists.
+        const auto dryLeft = (osc1Sample.left + osc2Sample.left) * envelopeValue * kVoiceGain;
+        const auto dryRight = (osc1Sample.right + osc2Sample.right) * envelopeValue * kVoiceGain;
 
         const auto lfoValue = _lfo.getNextSample();
-        const auto filtered = _filter.processSample(dryValue, lfoValue.left, lfoValue.right);
+        const auto filtered = _filter.processSample(dryLeft, dryRight, lfoValue.left, lfoValue.right);
 
         if (numChannels > 0)
             outputBuffer.addSample(0, startSample + sample, filtered.left);
@@ -91,10 +99,6 @@ void SineSynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
             outputBuffer.addSample(1, startSample + sample, filtered.right);
         for (int channel = 2; channel < numChannels; ++channel)
             outputBuffer.addSample(channel, startSample + sample, filtered.left);
-
-        _phase += _phaseIncrement;
-        if (_phase >= juce::MathConstants<double>::twoPi)
-            _phase -= juce::MathConstants<double>::twoPi;
 
         if (!_envelope.isActive())
         {
@@ -104,7 +108,7 @@ void SineSynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int
     }
 }
 
-void SineSynthVoice::setCurrentPlaybackSampleRate(double newRate)
+void SynthVoice::setCurrentPlaybackSampleRate(double newRate)
 {
     SynthesiserVoice::setCurrentPlaybackSampleRate(newRate);
 
@@ -114,15 +118,45 @@ void SineSynthVoice::setCurrentPlaybackSampleRate(double newRate)
         _envelope.setParameters(readEnvelopeParameters());
         _lfo.setSampleRate(newRate);
         _lfo.setParameters(readLfoParameters(), _sharedState.hostBpm, _sharedState.freeLfoPhase01);
+        _oscillator1.setSampleRate(newRate);
+        _oscillator1.setBlockParameters(readOscillatorParameters(_sharedState.oscillator1));
+        _oscillator2.setSampleRate(newRate);
+        _oscillator2.setBlockParameters(readOscillatorParameters(_sharedState.oscillator2));
     }
 }
 
-void SineSynthVoice::prepareFilter(double sampleRate, int numChannels)
+void SynthVoice::prepareFilter(double sampleRate, int numChannels)
 {
     _filter.prepare(sampleRate, numChannels);
 }
 
-DahdsrEnvelope::Parameters SineSynthVoice::readEnvelopeParameters() const
+Oscillator::Parameters SynthVoice::readOscillatorParameters(const OscillatorState& state) const
+{
+    const auto shapeIndex = state.shape.load(std::memory_order_relaxed);
+
+    Oscillator::Parameters parameters;
+    parameters.shape = shapeIndex == 1 ? Oscillator::Shape::Triangle
+                      : shapeIndex == 2 ? Oscillator::Shape::Saw
+                      : shapeIndex == 3 ? Oscillator::Shape::Square
+                      : Oscillator::Shape::Sine;
+    parameters.shapeNoisePercent = state.shapeNoisePercent.load(std::memory_order_relaxed);
+    parameters.octave = state.octave.load(std::memory_order_relaxed);
+    parameters.detuneCents = state.detuneCents.load(std::memory_order_relaxed);
+    parameters.warpPercent = state.warpPercent.load(std::memory_order_relaxed);
+    parameters.foldPercent = state.foldPercent.load(std::memory_order_relaxed);
+    parameters.outputDb = state.outputDb.load(std::memory_order_relaxed);
+    parameters.unisonVoices = state.unisonVoices.load(std::memory_order_relaxed);
+    parameters.unisonDetuneCents = state.unisonDetuneCents.load(std::memory_order_relaxed);
+    parameters.unisonStereoPercent = state.unisonStereoPercent.load(std::memory_order_relaxed);
+    parameters.subLevelPercent = state.subLevelPercent.load(std::memory_order_relaxed);
+    parameters.subOctaveDown2 = state.subOctaveDown2.load(std::memory_order_relaxed);
+    parameters.phasePercent = state.phasePercent.load(std::memory_order_relaxed);
+    parameters.phaseRandomizeEnabled = state.phaseRandomizeEnabled.load(std::memory_order_relaxed);
+
+    return parameters;
+}
+
+DahdsrEnvelope::Parameters SynthVoice::readEnvelopeParameters() const
 {
     return {
         .delayMs = _sharedState.envelopeDelayMs.load(std::memory_order_relaxed),
@@ -134,7 +168,7 @@ DahdsrEnvelope::Parameters SineSynthVoice::readEnvelopeParameters() const
     };
 }
 
-VoiceFilter::BlockParameters SineSynthVoice::readFilterParameters() const
+VoiceFilter::BlockParameters SynthVoice::readFilterParameters() const
 {
     const auto typeIndex = _sharedState.filterType.load(std::memory_order_relaxed);
 
@@ -153,7 +187,7 @@ VoiceFilter::BlockParameters SineSynthVoice::readFilterParameters() const
     return parameters;
 }
 
-Lfo::Parameters SineSynthVoice::readLfoParameters() const
+Lfo::Parameters SynthVoice::readLfoParameters() const
 {
     const auto shapeIndex = _sharedState.lfoShape.load(std::memory_order_relaxed);
 

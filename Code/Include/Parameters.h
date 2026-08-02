@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+
+#include "Audio/VoiceSharedState.h"
 #include "PluginProcessor.h"
 
 struct Parameters
@@ -7,6 +10,57 @@ struct Parameters
     // General.
     static constexpr char PLUGIN_ENABLED_ID[] = "plugin-enabled";
     static constexpr bool PLUGIN_ENABLED_DEFAULT = true;
+
+    // Synth oscillators (two independent instances - osc1-/osc2- prefixed IDs, both registered via
+    // the one registerOscillatorParameters(processor, idPrefix, state) helper below, since the
+    // alternative is two ~130-line blocks differing only by ID string and which OscillatorState
+    // field to write into). oscShape reuses the same vocabulary as lfoShape (Sine/Triangle/Saw/
+    // Square). Octave and Unison Voices are stepped integer-like dials (interval=1), registered
+    // through the float-typed template for the same reason lfoSyncDivision is - Dial-family
+    // widgets read their own min/max/default via getParameterMinValue<float>/etc.
+    static constexpr char OSC_SHAPE_SUFFIX[] = "shape";
+    static constexpr int OSC_SHAPE_DEFAULT = 0;
+    static constexpr char OSC_SHAPE_NOISE_PERCENT_SUFFIX[] = "shape-noise-percent";
+    static constexpr float OSC_SHAPE_NOISE_PERCENT_DEFAULT = 0.0f;
+    static constexpr char OSC_OCTAVE_SUFFIX[] = "octave";
+    static constexpr float OSC_OCTAVE_DEFAULT = 0.0f;
+    static constexpr float OSC_OCTAVE_MIN = -3.0f;
+    static constexpr float OSC_OCTAVE_MAX = 3.0f;
+    static constexpr char OSC_DETUNE_CENTS_SUFFIX[] = "detune-cents";
+    static constexpr float OSC_DETUNE_CENTS_DEFAULT = 0.0f;
+    static constexpr float OSC_DETUNE_CENTS_MIN = -50.0f;
+    static constexpr float OSC_DETUNE_CENTS_MAX = 50.0f;
+    static constexpr char OSC_WARP_PERCENT_SUFFIX[] = "warp-percent";
+    static constexpr float OSC_WARP_PERCENT_DEFAULT = 0.0f;
+    static constexpr float OSC_WARP_PERCENT_MIN = -100.0f;
+    static constexpr float OSC_WARP_PERCENT_MAX = 100.0f;
+    static constexpr char OSC_FOLD_PERCENT_SUFFIX[] = "fold-percent";
+    static constexpr float OSC_FOLD_PERCENT_DEFAULT = 0.0f;
+    static constexpr char OSC_OUTPUT_DB_SUFFIX[] = "output-db";
+    static constexpr float OSC_OUTPUT_DB_DEFAULT = 0.0f; // oscillator 1's default - oscillator 2's
+                                                            // differs (see VoiceSharedState::kOscillator2DefaultOutputDb)
+    static constexpr float OSC_OUTPUT_DB_MIN = -24.0f;
+    static constexpr float OSC_OUTPUT_DB_MAX = 6.0f;
+    static constexpr char OSC_UNISON_VOICES_SUFFIX[] = "unison-voices";
+    static constexpr float OSC_UNISON_VOICES_DEFAULT = 1.0f;
+    static constexpr float OSC_UNISON_VOICES_MIN = 1.0f;
+    static constexpr float OSC_UNISON_VOICES_MAX = 16.0f;
+    static constexpr char OSC_UNISON_DETUNE_CENTS_SUFFIX[] = "unison-detune-cents";
+    static constexpr float OSC_UNISON_DETUNE_CENTS_DEFAULT = 0.0f;
+    static constexpr float OSC_UNISON_DETUNE_CENTS_MAX = 50.0f;
+    static constexpr char OSC_UNISON_STEREO_PERCENT_SUFFIX[] = "unison-stereo-percent";
+    static constexpr float OSC_UNISON_STEREO_PERCENT_DEFAULT = 0.0f;
+    static constexpr char OSC_SUB_LEVEL_PERCENT_SUFFIX[] = "sub-level-percent";
+    static constexpr float OSC_SUB_LEVEL_PERCENT_DEFAULT = 0.0f;
+    static constexpr char OSC_SUB_OCTAVE_DOWN2_ENABLED_SUFFIX[] = "sub-octave-down2-enabled";
+    static constexpr bool OSC_SUB_OCTAVE_DOWN2_ENABLED_DEFAULT = false;
+    static constexpr char OSC_PHASE_PERCENT_SUFFIX[] = "phase-percent";
+    static constexpr float OSC_PHASE_PERCENT_DEFAULT = 0.0f;
+    static constexpr char OSC_PHASE_RANDOMIZE_ENABLED_SUFFIX[] = "phase-randomize-enabled";
+    static constexpr bool OSC_PHASE_RANDOMIZE_ENABLED_DEFAULT = false;
+
+    static constexpr char OSC1_ID_PREFIX[] = "osc1-";
+    static constexpr char OSC2_ID_PREFIX[] = "osc2-";
 
     // Synth envelope (Delay-Attack-Hold-Decay-Sustain-Release).
     static constexpr char ENVELOPE_DELAY_MS_ID[] = "envelope-delay-ms";
@@ -80,12 +134,19 @@ struct Parameters
     enum Section
     {
         PLUGIN,
+        OSCILLATOR,
         ENVELOPE,
         FILTER,
         LFO,
     };
 
     static void registerPluginParameters(PluginAudioProcessor* audioProcessor);
+    // Registers all 13 osc-* parameters for one oscillator instance, with idPrefix ("osc1-" or
+    // "osc2-") prepended to every ID and onChange callbacks writing into state. outputDbDefault is
+    // the one field that legitimately differs per instance (see
+    // VoiceSharedState::kOscillator2DefaultOutputDb) - every other default is shared, via the
+    // OSC_*_DEFAULT constants above.
+    static void registerOscillatorParameters(PluginAudioProcessor* audioProcessor, const std::string& idPrefix, audio::OscillatorState& state, float outputDbDefault);
     static void registerEnvelopeParameters(PluginAudioProcessor* audioProcessor);
     static void registerFilterParameters(PluginAudioProcessor* audioProcessor);
     static void registerLfoParameters(PluginAudioProcessor* audioProcessor);

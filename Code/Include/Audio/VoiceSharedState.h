@@ -7,7 +7,30 @@
 namespace audio
 {
 
-// Owned by ChordSynthEngine, referenced by every SineSynthVoice. Every field is std::atomic
+// One oscillator's worth of atomics, matching audio::Oscillator::Parameters field-for-field - see
+// SynthVoice::readOscillatorParameters() for the int/bool-to-Oscillator::Parameters mapping.
+// shape: 0=Sine,1=Triangle,2=Saw,3=Square, same vocabulary as VoiceSharedState::lfoShape below.
+// Every field here follows VoiceSharedState's own cross-thread/read-cadence contract (see its doc
+// comment) - re-snapshotted once per renderNextBlock, same as the Filter/LFO blocks.
+struct OscillatorState
+{
+    std::atomic<int> shape { 0 };
+    std::atomic<float> shapeNoisePercent { 0.0f };
+    std::atomic<int> octave { 0 };
+    std::atomic<float> detuneCents { 0.0f };
+    std::atomic<float> warpPercent { 0.0f };
+    std::atomic<float> foldPercent { 0.0f };
+    std::atomic<float> outputDb { 0.0f };
+    std::atomic<int> unisonVoices { 1 };
+    std::atomic<float> unisonDetuneCents { 0.0f };
+    std::atomic<float> unisonStereoPercent { 0.0f };
+    std::atomic<float> subLevelPercent { 0.0f };
+    std::atomic<bool> subOctaveDown2 { false };
+    std::atomic<float> phasePercent { 0.0f };
+    std::atomic<bool> phaseRandomizeEnabled { false };
+};
+
+// Owned by ChordSynthEngine, referenced by every SynthVoice. Every field is std::atomic
 // because a write can legitimately arrive from either thread: a UI knob drag fires an APVTS
 // onChange callback on the message thread, but host automation writing the same parameter during
 // processBlock fires the identical callback on the audio thread (confirmed against JUCE's actual
@@ -16,11 +39,19 @@ namespace audio
 // a real data race against automation writes; relaxed ordering is sufficient since every field is
 // read/written independently, with no cross-field consistency required.
 //
-// Read cadence is deliberately not uniform - see SineSynthVoice for where each field is actually
+// Read cadence is deliberately not uniform - see SynthVoice for where each field is actually
 // read: envelope shape is snapshotted once at startNote() (matches juce::ADSR's own "don't change
 // shape mid-flight" contract), not re-read continuously during a held note.
 struct VoiceSharedState
 {
+    // oscillator2 defaults its output far enough down (-60dB, effectively silent) that a fresh,
+    // untouched instance sums to the same audible result as oscillator1 alone - matching this
+    // plugin's "sonically identical to today until touched" convention for every other section.
+    static constexpr float kOscillator2DefaultOutputDb = -60.0f;
+
+    OscillatorState oscillator1;
+    OscillatorState oscillator2 { .outputDb = kOscillator2DefaultOutputDb };
+
     std::atomic<float> envelopeDelayMs { 0.0f };
     std::atomic<float> envelopeAttackMs { 5.0f };
     std::atomic<float> envelopeHoldMs { 0.0f };
@@ -29,7 +60,7 @@ struct VoiceSharedState
     std::atomic<float> envelopeReleaseMs { 200.0f };
 
     // filterType: 0 = low-pass, 1 = high-pass, 2 = band-pass. filterSlope: 0 = 12dB/octave,
-    // 1 = 24dB/octave. See SineSynthVoice::readFilterParameters() for the int-to-enum mapping.
+    // 1 = 24dB/octave. See SynthVoice::readFilterParameters() for the int-to-enum mapping.
     std::atomic<int> filterType { 0 };
     std::atomic<int> filterSlope { 0 };
     std::atomic<float> filterCutoffHz { 20000.0f };
@@ -39,7 +70,7 @@ struct VoiceSharedState
     std::atomic<float> filterKeyTrackPercent { 0.0f };
 
     // lfoShape: 0=Sine,1=Triangle,2=Saw,3=Square. lfoMode: 0=Trigger,1=Free. lfoSyncDivision is a
-    // raw ndsp::Timing::NoteTiming value. See SineSynthVoice::readLfoParameters() for the mapping.
+    // raw ndsp::Timing::NoteTiming value. See SynthVoice::readLfoParameters() for the mapping.
     std::atomic<int> lfoShape { 0 };
     std::atomic<float> lfoRateHz { 2.0f };
     std::atomic<bool> lfoSyncEnabled { false };

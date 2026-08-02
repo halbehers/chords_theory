@@ -101,7 +101,7 @@ TEST_CASE("DahdsrEnvelope: zero-duration Delay/Hold/Decay are skipped instantly,
 {
     DahdsrEnvelope envelope;
     envelope.setSampleRate(kSampleRate);
-    // Today's SineSynthVoice constants: delay=0, attack=5ms, hold=0, decay=0, sustain=100%, release=200ms.
+    // Today's SynthVoice constants: delay=0, attack=5ms, hold=0, decay=0, sustain=100%, release=200ms.
     envelope.setParameters({ .delayMs = 0.0f, .attackMs = 5.0f, .holdMs = 0.0f, .decayMs = 0.0f, .sustainLevel = 1.0f, .releaseMs = 200.0f });
 
     envelope.noteOn();

@@ -20,7 +20,27 @@ TEST_CASE("Parameters ID constants are all non-empty and mutually distinct", "[P
 {
     // A copy-paste ID collision here would silently corrupt APVTS parameter registration - this
     // is a correctness net that stays useful as more parameters get added on top of the template.
-    const std::vector<std::string> ids {
+    // Oscillator IDs are prefix+suffix (osc1-/osc2- x 13 suffixes, see registerOscillatorParameters)
+    // rather than standalone ID constants like every other section - built here the same way
+    // registration itself builds them.
+    const std::vector<std::string> oscillatorSuffixes {
+        Parameters::OSC_SHAPE_SUFFIX,
+        Parameters::OSC_SHAPE_NOISE_PERCENT_SUFFIX,
+        Parameters::OSC_OCTAVE_SUFFIX,
+        Parameters::OSC_DETUNE_CENTS_SUFFIX,
+        Parameters::OSC_WARP_PERCENT_SUFFIX,
+        Parameters::OSC_FOLD_PERCENT_SUFFIX,
+        Parameters::OSC_OUTPUT_DB_SUFFIX,
+        Parameters::OSC_UNISON_VOICES_SUFFIX,
+        Parameters::OSC_UNISON_DETUNE_CENTS_SUFFIX,
+        Parameters::OSC_UNISON_STEREO_PERCENT_SUFFIX,
+        Parameters::OSC_SUB_LEVEL_PERCENT_SUFFIX,
+        Parameters::OSC_SUB_OCTAVE_DOWN2_ENABLED_SUFFIX,
+        Parameters::OSC_PHASE_PERCENT_SUFFIX,
+        Parameters::OSC_PHASE_RANDOMIZE_ENABLED_SUFFIX,
+    };
+
+    std::vector<std::string> ids {
         Parameters::PLUGIN_ENABLED_ID,
         Parameters::ENVELOPE_DELAY_MS_ID,
         Parameters::ENVELOPE_ATTACK_MS_ID,
@@ -45,6 +65,12 @@ TEST_CASE("Parameters ID constants are all non-empty and mutually distinct", "[P
         Parameters::LFO_STEREO_PERCENT_ID,
         Parameters::LFO_DEPTH_PERCENT_ID,
     };
+
+    for (const auto& suffix : oscillatorSuffixes)
+    {
+        ids.push_back(Parameters::OSC1_ID_PREFIX + suffix);
+        ids.push_back(Parameters::OSC2_ID_PREFIX + suffix);
+    }
 
     for (const auto& id : ids)
         CHECK(! id.empty());

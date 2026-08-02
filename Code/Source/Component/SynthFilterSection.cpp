@@ -8,7 +8,7 @@ namespace component
 {
 
 SynthFilterSection::SynthFilterSection(const std::string& identifier, ndsp::ParameterManager& parameterManager):
-    Section(identifier, parameterManager),
+    SynthSection(identifier, parameterManager),
     _typeCycler(parameterManager, Parameters::FILTER_TYPE_ID),
     _slopeCycler(parameterManager, Parameters::FILTER_SLOPE_ID),
     _responseCurve(parameterManager, identifier + "-curve", Parameters::FILTER_TYPE_ID, Parameters::FILTER_SLOPE_ID,
@@ -19,13 +19,6 @@ SynthFilterSection::SynthFilterSection(const std::string& identifier, ndsp::Para
     _mixDial(parameterManager, Parameters::FILTER_MIX_PERCENT_ID),
     _keyTrackDial(parameterManager, Parameters::FILTER_KEY_TRACK_PERCENT_ID)
 {
-    setSectionName(juce::translate("synth_filter_section_title").toStdString());
-    displayBorder();
-    displayBackground();
-
-    refreshDialLabels();
-    AppLocalisation::getChangeBroadcaster().addChangeListener(this);
-
     addAndMakeVisible(_typeCycler);
     addAndMakeVisible(_slopeCycler);
     addAndMakeVisible(_responseCurve);
@@ -50,6 +43,8 @@ SynthFilterSection::SynthFilterSection(const std::string& identifier, ndsp::Para
     getLayout().addComponent(_driveDial, 2, 2, 1, 1);
     getLayout().addComponent(_mixDial, 2, 3, 1, 1);
     getLayout().addComponent(_keyTrackDial, 2, 4, 1, 1);
+
+    initSection();
 }
 
 SynthFilterSection::~SynthFilterSection()
@@ -57,18 +52,12 @@ SynthFilterSection::~SynthFilterSection()
     AppLocalisation::getChangeBroadcaster().removeChangeListener(this);
 }
 
-void SynthFilterSection::changeListenerCallback(juce::ChangeBroadcaster* source)
+std::string SynthFilterSection::getSectionName()
 {
-    Section::changeListenerCallback(source);
-
-    if (source != &AppLocalisation::getChangeBroadcaster())
-        return;
-
-    setSectionName(juce::translate("synth_filter_section_title").toStdString());
-    refreshDialLabels();
+    return juce::translate("synth_filter_section_title").toStdString();
 }
 
-void SynthFilterSection::refreshDialLabels()
+void SynthFilterSection::refreshLabels()
 {
     _cutoffDial.setDisplayLabel(juce::translate("synth_filter_cutoff_label"));
     _resonanceDial.setDisplayLabel(juce::translate("synth_filter_resonance_label"));

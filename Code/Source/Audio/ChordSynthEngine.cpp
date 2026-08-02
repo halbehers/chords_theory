@@ -2,18 +2,18 @@
 
 #include <cmath>
 
-#include "Audio/SineSynthSound.h"
-#include "Audio/SineSynthVoice.h"
+#include "Audio/SynthSound.h"
+#include "Audio/SynthVoice.h"
 
 namespace audio
 {
 
 ChordSynthEngine::ChordSynthEngine()
 {
-    _synth.addSound(new SineSynthSound());
+    _synth.addSound(new SynthSound());
 
     for (int i = 0; i < kNumVoices; ++i)
-        _synth.addVoice(new SineSynthVoice(_sharedState));
+        _synth.addVoice(new SynthVoice(_sharedState));
 }
 
 void ChordSynthEngine::prepare(double sampleRate, int samplesPerBlock, int numChannels)
@@ -26,7 +26,7 @@ void ChordSynthEngine::prepare(double sampleRate, int samplesPerBlock, int numCh
     // juce::SynthesiserVoice has no channel-count-aware prepare hook - each voice's VoiceFilter
     // needs the negotiated channel count directly, so it's pushed in here explicitly.
     for (int i = 0; i < _synth.getNumVoices(); ++i)
-        if (auto* voice = dynamic_cast<SineSynthVoice*>(_synth.getVoice(i)))
+        if (auto* voice = dynamic_cast<SynthVoice*>(_synth.getVoice(i)))
             voice->prepareFilter(sampleRate, numChannels);
 }
 

@@ -4,21 +4,22 @@
 
 #include <nierika_dsp/nierika_dsp.h>
 
+#include "SynthSection.h"
+
 namespace component
 {
 
-// One "module" of the Synth tab's grid (see SynthEditor) - the DAHDSR envelope: a draggable
-// EnvelopeCurve display plus six knobs, all APVTS-attached directly to Parameters::ENVELOPE_*.
-class SynthAdsrSection : public nui::Section
+class SynthAdsrSection : public SynthSection
 {
 public:
     SynthAdsrSection(const std::string& identifier, ndsp::ParameterManager& parameterManager);
     ~SynthAdsrSection() override;
 
-private:
-    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
-    void refreshDialLabels();
+protected:
+    std::string getSectionName() override;
+    void refreshLabels() override;
 
+private:
     nelement::EnvelopeCurve _envelopeCurve;
     nelement::TimeInMsDial _delayDial;
     nelement::TimeInMsDial _attackDial;

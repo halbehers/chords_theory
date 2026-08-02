@@ -4,22 +4,22 @@
 
 #include <nierika_dsp/nierika_dsp.h>
 
+#include "SynthSection.h"
+
 namespace component
 {
 
-// One "module" of the Synth tab's grid (see SynthEditor) - the filter: Type/Slope cyclers, a
-// draggable FilterResponseCurve display, and Cutoff/Resonance/Drive/Mix/Key-Track knobs, all
-// APVTS-attached directly to Parameters::FILTER_*.
-class SynthFilterSection : public nui::Section
+class SynthFilterSection : public SynthSection
 {
 public:
     SynthFilterSection(const std::string& identifier, ndsp::ParameterManager& parameterManager);
     ~SynthFilterSection() override;
 
-private:
-    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
-    void refreshDialLabels();
+protected:
+    std::string getSectionName() override;
+    void refreshLabels() override;
 
+private:
     nelement::Cycler _typeCycler;
     nelement::Cycler _slopeCycler;
     nelement::FilterResponseCurve _responseCurve;

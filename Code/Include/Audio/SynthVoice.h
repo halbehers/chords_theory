@@ -4,19 +4,22 @@
 
 #include "Audio/DahdsrEnvelope.h"
 #include "Audio/Lfo.h"
+#include "Audio/Oscillator.h"
 #include "Audio/VoiceFilter.h"
 #include "Audio/VoiceSharedState.h"
 
 namespace audio
 {
 
-// A single sine-wave voice shaped by a 6-stage DahdsrEnvelope, a per-voice VoiceFilter, and an
-// Lfo modulating the filter's cutoff. Audio-thread only: startNote/stopNote/renderNextBlock never
-// allocate.
-class SineSynthVoice : public juce::SynthesiserVoice
+// A single voice, shaped by a 6-stage DahdsrEnvelope, a per-voice VoiceFilter, and an Lfo
+// modulating the filter's cutoff. Its tone source is two independent Oscillator instances, summed
+// by simple addition (see renderNextBlock) - a single, easily-swappable point for a future
+// combine-mode parameter (parallel/serial/FM/...), not yet abstracted further since that parameter
+// doesn't exist yet. Audio-thread only: startNote/stopNote/renderNextBlock never allocate.
+class SynthVoice : public juce::SynthesiserVoice
 {
 public:
-    explicit SineSynthVoice(VoiceSharedState& sharedState);
+    explicit SynthVoice(VoiceSharedState& sharedState);
 
     bool canPlaySound(juce::SynthesiserSound* sound) override;
 
@@ -40,13 +43,14 @@ public:
     void prepareFilter(double sampleRate, int numChannels);
 
 private:
+    [[nodiscard]] Oscillator::Parameters readOscillatorParameters(const OscillatorState& state) const;
     [[nodiscard]] DahdsrEnvelope::Parameters readEnvelopeParameters() const;
     [[nodiscard]] VoiceFilter::BlockParameters readFilterParameters() const;
     [[nodiscard]] Lfo::Parameters readLfoParameters() const;
 
     VoiceSharedState& _sharedState;
-    double _phase = 0.0;
-    double _phaseIncrement = 0.0;
+    Oscillator _oscillator1;
+    Oscillator _oscillator2;
     DahdsrEnvelope _envelope;
     VoiceFilter _filter;
     Lfo _lfo;

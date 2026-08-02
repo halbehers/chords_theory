@@ -8,7 +8,7 @@ namespace component
 {
 
 SynthLfoSection::SynthLfoSection(const std::string& identifier, ndsp::ParameterManager& parameterManager):
-    Section(identifier, parameterManager),
+    SynthSection(identifier, parameterManager),
     _shapeCycler(parameterManager, Parameters::LFO_SHAPE_ID),
     _lfoCurve(parameterManager, identifier + "-curve", Parameters::LFO_SHAPE_ID, Parameters::LFO_SMOOTH_PERCENT_ID),
     _modeToggle(parameterManager, Parameters::LFO_MODE_ID, nui::Icons::getBoxes()), // placeholder icon, to be replaced
@@ -20,13 +20,6 @@ SynthLfoSection::SynthLfoSection(const std::string& identifier, ndsp::ParameterM
     _stereoDial(parameterManager, Parameters::LFO_STEREO_PERCENT_ID),
     _depthDial(parameterManager, Parameters::LFO_DEPTH_PERCENT_ID)
 {
-    setSectionName(juce::translate("synth_lfo_section_title").toStdString());
-    displayBorder();
-    displayBackground();
-
-    refreshDialLabels();
-    AppLocalisation::getChangeBroadcaster().addChangeListener(this);
-
     addAndMakeVisible(_shapeCycler);
     addAndMakeVisible(_lfoCurve);
     addAndMakeVisible(_modeToggle);
@@ -75,12 +68,18 @@ SynthLfoSection::SynthLfoSection(const std::string& identifier, ndsp::ParameterM
     const auto isSyncEnabled = parameterManager.getState().getRawParameterValue(Parameters::LFO_SYNC_ENABLED_ID)->load() > 0.5f;
     _syncDivisionDial.setVisible(isSyncEnabled);
     _rateDial.setVisible(!isSyncEnabled);
+
+    initSection();
 }
 
 SynthLfoSection::~SynthLfoSection()
 {
-    AppLocalisation::getChangeBroadcaster().removeChangeListener(this);
     _syncToggle.removeListener(this);
+}
+
+std::string SynthLfoSection::getSectionName()
+{
+    return juce::translate("synth_lfo_section_title").toStdString();
 }
 
 void SynthLfoSection::onToggleValueChanged(const std::string& componentID, bool isOn)
@@ -94,18 +93,7 @@ void SynthLfoSection::onToggleValueChanged(const std::string& componentID, bool 
     _rateDial.setVisible(!isOn);
 }
 
-void SynthLfoSection::changeListenerCallback(juce::ChangeBroadcaster* source)
-{
-    Section::changeListenerCallback(source);
-
-    if (source != &AppLocalisation::getChangeBroadcaster())
-        return;
-
-    setSectionName(juce::translate("synth_lfo_section_title").toStdString());
-    refreshDialLabels();
-}
-
-void SynthLfoSection::refreshDialLabels()
+void SynthLfoSection::refreshLabels()
 {
     _syncDivisionDial.setDisplayLabel(juce::translate("synth_lfo_sync_division_label"));
     _rateDial.setDisplayLabel(juce::translate("synth_lfo_rate_label"));

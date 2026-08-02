@@ -25,7 +25,7 @@ namespace
         for (int i = 0; i < numSamples; ++i)
         {
             const auto input = static_cast<float>(std::sin(phase));
-            const auto output = filter.processSample(input, 0.0f, 0.0f);
+            const auto output = filter.processSample(input, input, 0.0f, 0.0f);
 
             if (i > numSamples / 2)
                 sumSquares += static_cast<double>(output.left) * static_cast<double>(output.left);
@@ -74,7 +74,7 @@ TEST_CASE("VoiceFilter: mix=0% reproduces the dry input exactly regardless of fi
 
     for (const float input : { 0.0f, 0.3f, -0.5f, 0.9f, -0.9f })
     {
-        const auto output = filter.processSample(input, 0.0f, 0.0f);
+        const auto output = filter.processSample(input, input, 0.0f, 0.0f);
         CHECK_THAT(output.left, WithinAbs(input, 1.0e-6f));
         CHECK_THAT(output.right, WithinAbs(input, 1.0e-6f));
     }
@@ -120,7 +120,7 @@ TEST_CASE("VoiceFilter: extreme cutoff settings are clamped below Nyquist and do
     filter.setBlockParameters(params);
 
     for (int i = 0; i < 100; ++i)
-        std::ignore = filter.processSample(0.5f, 1.0f, 1.0f);
+        std::ignore = filter.processSample(0.5f, 0.5f, 1.0f, 1.0f);
 
     SUCCEED("processSample completed without tripping StateVariableTPTFilter's Nyquist assert");
 }
@@ -137,7 +137,7 @@ TEST_CASE("VoiceFilter: a mono voice's right channel mirrors the left channel", 
     for (float phaseDeg = 0.0f; phaseDeg < 360.0f; phaseDeg += 15.0f)
     {
         const auto input = std::sin(juce::degreesToRadians(phaseDeg));
-        const auto output = filter.processSample(input, 0.0f, 0.0f);
+        const auto output = filter.processSample(input, input, 0.0f, 0.0f);
         CHECK_THAT(output.right, WithinAbs(output.left, 1.0e-6f));
     }
 }

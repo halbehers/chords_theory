@@ -14,6 +14,93 @@ void Parameters::registerPluginParameters(PluginAudioProcessor* audioProcessor)
             );
 }
 
+void Parameters::registerOscillatorParameters(PluginAudioProcessor* audioProcessor, const std::string& idPrefix, audio::OscillatorState& state, float outputDbDefault)
+{
+    auto* statePtr = &state;
+
+    audioProcessor->registerParameter<int>(
+        std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID { idPrefix + OSC_SHAPE_SUFFIX, 1 }, "Shape",
+            juce::StringArray { "Sine", "Triangle", "Saw", "Square" }, OSC_SHAPE_DEFAULT),
+        ndsp::IParameter::TYPE_INT, OSC_SHAPE_DEFAULT, 0, 3,
+        [statePtr](int value) { statePtr->shape.store(value, std::memory_order_relaxed); },
+        "Oscillator waveform shape.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_SHAPE_NOISE_PERCENT_SUFFIX, "Shape Noise", OSC_SHAPE_NOISE_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [statePtr](float value) { statePtr->shapeNoisePercent.store(value, std::memory_order_relaxed); },
+        "Blends white noise into the waveform, as a percentage.");
+
+    // Bound to a plain Dial (not a Cycler), which - like every Dial subclass - reads its own
+    // min/max/default via ParameterManager::getParameterMinValue<float>/etc, so this is registered
+    // through the float-typed template even though it's always a whole number of octaves.
+    juce::NormalisableRange<float> octaveRange(OSC_OCTAVE_MIN, OSC_OCTAVE_MAX, 1.0f);
+    audioProcessor->registerParameter<float>(
+        std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { idPrefix + OSC_OCTAVE_SUFFIX, 1 }, "Octave", octaveRange, OSC_OCTAVE_DEFAULT),
+        ndsp::IParameter::TYPE_FLOAT, OSC_OCTAVE_DEFAULT, OSC_OCTAVE_MIN, OSC_OCTAVE_MAX,
+        [statePtr](float value) { statePtr->octave.store(static_cast<int>(std::round(value)), std::memory_order_relaxed); },
+        "Coarse tuning, in whole octaves.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_DETUNE_CENTS_SUFFIX, "Detune", OSC_DETUNE_CENTS_DEFAULT, OSC_DETUNE_CENTS_MIN, OSC_DETUNE_CENTS_MAX,
+        [statePtr](float value) { statePtr->detuneCents.store(value, std::memory_order_relaxed); },
+        "Fine tuning, in cents.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_WARP_PERCENT_SUFFIX, "Warp", OSC_WARP_PERCENT_DEFAULT, OSC_WARP_PERCENT_MIN, OSC_WARP_PERCENT_MAX,
+        [statePtr](float value) { statePtr->warpPercent.store(value, std::memory_order_relaxed); },
+        "Squeezes the waveform into a shrinking window on one side of the cycle (negative: right, positive: left), zero-filling the rest.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_FOLD_PERCENT_SUFFIX, "Fold", OSC_FOLD_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [statePtr](float value) { statePtr->foldPercent.store(value, std::memory_order_relaxed); },
+        "Wavefolds the shaped signal back onto itself, as a percentage.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_OUTPUT_DB_SUFFIX, "Output", outputDbDefault, OSC_OUTPUT_DB_MIN, OSC_OUTPUT_DB_MAX,
+        [statePtr](float value) { statePtr->outputDb.store(value, std::memory_order_relaxed); },
+        "Oscillator output level, in decibels.");
+
+    juce::NormalisableRange<float> unisonVoicesRange(OSC_UNISON_VOICES_MIN, OSC_UNISON_VOICES_MAX, 1.0f);
+    audioProcessor->registerParameter<float>(
+        std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { idPrefix + OSC_UNISON_VOICES_SUFFIX, 1 }, "Unison Voices", unisonVoicesRange, OSC_UNISON_VOICES_DEFAULT),
+        ndsp::IParameter::TYPE_FLOAT, OSC_UNISON_VOICES_DEFAULT, OSC_UNISON_VOICES_MIN, OSC_UNISON_VOICES_MAX,
+        [statePtr](float value) { statePtr->unisonVoices.store(static_cast<int>(std::round(value)), std::memory_order_relaxed); },
+        "Number of detuned/stereo-spread unison voices.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_UNISON_DETUNE_CENTS_SUFFIX, "Unison Detune", OSC_UNISON_DETUNE_CENTS_DEFAULT, 0.0f, OSC_UNISON_DETUNE_CENTS_MAX,
+        [statePtr](float value) { statePtr->unisonDetuneCents.store(value, std::memory_order_relaxed); },
+        "Spread between unison voices, in cents.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_UNISON_STEREO_PERCENT_SUFFIX, "Unison Stereo", OSC_UNISON_STEREO_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [statePtr](float value) { statePtr->unisonStereoPercent.store(value, std::memory_order_relaxed); },
+        "Stereo width of the unison voice spread, as a percentage.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_SUB_LEVEL_PERCENT_SUFFIX, "Sub Level", OSC_SUB_LEVEL_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [statePtr](float value) { statePtr->subLevelPercent.store(value, std::memory_order_relaxed); },
+        "Level of a plain sine sub-oscillator layer, as a percentage.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_SUB_OCTAVE_DOWN2_ENABLED_SUFFIX, "Sub Octave", OSC_SUB_OCTAVE_DOWN2_ENABLED_DEFAULT,
+        [statePtr](bool value) { statePtr->subOctaveDown2.store(value, std::memory_order_relaxed); },
+        "Off: sub-oscillator is one octave below the note. On: two octaves below.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_PHASE_PERCENT_SUFFIX, "Phase", OSC_PHASE_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [statePtr](float value) { statePtr->phasePercent.store(value, std::memory_order_relaxed); },
+        "Starting phase for every new note, as a percentage of a full cycle.");
+
+    audioProcessor->registerParameter(
+        idPrefix + OSC_PHASE_RANDOMIZE_ENABLED_SUFFIX, "Phase Randomize", OSC_PHASE_RANDOMIZE_ENABLED_DEFAULT,
+        [statePtr](bool value) { statePtr->phaseRandomizeEnabled.store(value, std::memory_order_relaxed); },
+        "Ignore the Phase dial and start every new note at a random phase instead.");
+}
+
 void Parameters::registerEnvelopeParameters(PluginAudioProcessor* audioProcessor)
 {
     // A raw pointer to the long-lived VoiceSharedState (owned by ChordSynthEngine, itself a
@@ -178,6 +265,13 @@ void Parameters::registerSection(Section section, PluginAudioProcessor* audioPro
         case PLUGIN:
             registerPluginParameters(audioProcessor);
             break;
+        case OSCILLATOR:
+        {
+            auto* sharedState = &audioProcessor->getSynthEngine().getSharedState();
+            registerOscillatorParameters(audioProcessor, OSC1_ID_PREFIX, sharedState->oscillator1, OSC_OUTPUT_DB_DEFAULT);
+            registerOscillatorParameters(audioProcessor, OSC2_ID_PREFIX, sharedState->oscillator2, audio::VoiceSharedState::kOscillator2DefaultOutputDb);
+            break;
+        }
         case ENVELOPE:
             registerEnvelopeParameters(audioProcessor);
             break;
@@ -193,6 +287,7 @@ void Parameters::registerSection(Section section, PluginAudioProcessor* audioPro
 void Parameters::registerAllSections(PluginAudioProcessor* audioProcessor)
 {
     registerSection(Section::PLUGIN, audioProcessor);
+    registerSection(Section::OSCILLATOR, audioProcessor);
     registerSection(Section::ENVELOPE, audioProcessor);
     registerSection(Section::FILTER, audioProcessor);
     registerSection(Section::LFO, audioProcessor);

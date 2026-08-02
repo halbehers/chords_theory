@@ -31,12 +31,17 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynth
     _progressionSequencer.setScale(_keyScaleSelector.getScale());
 
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
+
+    _mainSection.setTabsBackgroundColour(nui::Theme::newColor(nui::Theme::BACKGROUND).asJuce());
+    _mainSection.setTabsSelectedBackgroundColour(nui::Theme::newColor(nui::Theme::ACCENT).asJuce().withAlpha(.2f));
+    _mainSection.setTabsBorderColour(juce::Colours::transparentBlack);
+    _mainSection.setTabsSelectedBorderColour(nui::Theme::newColor(nui::Theme::ACCENT).asJuce());
+    _mainSection.setTabsSelectedTextColour(nui::Theme::newColor(nui::Theme::INVERTED_TEXT).asJuce());
+    _mainSection.setTabsFontSize(nui::Theme::PARAGRAPH);
+    _mainSection.setTabsHeightType(nui::Theme::HeightType::THIN);
+
     _mainSection.addOnPanelChangedListener(this);
 
-    // "Chords" tab: renames Section's own default MAIN_PANEL_ID panel rather than leaving an
-    // orphan "Main" tab - same row heights as the old top-level rows 1-3, just nested one level
-    // deeper now (see the header comment on _mainSection for why this has to be a *new*, nested
-    // Section rather than tabbing this class's own inherited grid).
     _mainSection.setPanelName(MAIN_PANEL_ID, juce::translate("chords_tab_label").toStdString());
     _mainSection.addPanel("synth-tab", juce::translate("synth_tab_label").toStdString());
 

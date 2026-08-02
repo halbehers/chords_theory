@@ -10,7 +10,7 @@
 namespace audio
 {
 
-// Owns the polyphonic sine synth and bridges UI-thread "preview this chord" clicks into the
+// Owns the polyphonic synth and bridges UI-thread "preview this chord" clicks into the
 // audio-thread Synthesiser via juce::MidiKeyboardState - JUCE's standard, safety-appropriate
 // pattern for this exact cross-thread scenario (its critical sections only ever do trivial
 // bitmask/MidiBuffer::addEvent work, unlike Synthesiser::noteOn/noteOff, which lock around an
@@ -55,7 +55,7 @@ private:
     // this is its own constant rather than a cross-layer include).
     static constexpr double kFallbackBpm = 120.0;
 
-    // Declared before _synth deliberately - every SineSynthVoice added to _synth holds a
+    // Declared before _synth deliberately - every SynthVoice added to _synth holds a
     // reference to _sharedState, so it must be constructed first and destroyed last (C++ member
     // destruction order is the reverse of declaration order).
     VoiceSharedState _sharedState;

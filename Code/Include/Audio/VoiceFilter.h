@@ -48,12 +48,13 @@ public:
     // comment for why cutoff/resonance/drive/mix/type/slope are re-read at block rate).
     void setBlockParameters(const BlockParameters& parameters) noexcept;
 
-    // dryInput: the (identical-to-both-channels) mono oscillator sample. lfoLeft/lfoRight: this
-    // sample's bipolar (-1..1) LFO value per channel (pass 0.0f for both if no LFO is modulating
-    // the filter yet). Cutoff is recomputed and clamped to [20Hz, sampleRate*0.49] every sample on
-    // every stage - required, not optional: juce::dsp::StateVariableTPTFilter::setCutoffFrequency
-    // asserts the frequency stays below Nyquist.
-    [[nodiscard]] StereoSample processSample(float dryInput, float lfoLeft, float lfoRight) noexcept;
+    // dryLeft/dryRight: the oscillator's own stereo dry sample (unison stereo width can make these
+    // genuinely differ, not just mirror each other). lfoLeft/lfoRight: this sample's bipolar
+    // (-1..1) LFO value per channel (pass 0.0f for both if no LFO is modulating the filter yet).
+    // Cutoff is recomputed and clamped to [20Hz, sampleRate*0.49] every sample on every stage -
+    // required, not optional: juce::dsp::StateVariableTPTFilter::setCutoffFrequency asserts the
+    // frequency stays below Nyquist.
+    [[nodiscard]] StereoSample processSample(float dryLeft, float dryRight, float lfoLeft, float lfoRight) noexcept;
 
 private:
     [[nodiscard]] float computeChannelCutoffHz(float lfoValue) const noexcept;

@@ -62,14 +62,14 @@ void VoiceFilter::setBlockParameters(const BlockParameters& parameters) noexcept
     }
 }
 
-VoiceFilter::StereoSample VoiceFilter::processSample(float dryInput, float lfoLeft, float lfoRight) noexcept
+VoiceFilter::StereoSample VoiceFilter::processSample(float dryLeft, float dryRight, float lfoLeft, float lfoRight) noexcept
 {
-    const auto driven = driveSample(dryInput);
+    const auto drivenLeft = driveSample(dryLeft);
     const auto nyquistLimit = static_cast<float>(_sampleRate) * 0.49f;
     const auto numStages = juce::jlimit(0, static_cast<int>(_leftStages.size()), _parameters.numStages);
 
     const auto leftCutoff = juce::jlimit(20.0f, nyquistLimit, computeChannelCutoffHz(lfoLeft));
-    auto leftWet = driven;
+    auto leftWet = drivenLeft;
     for (int stage = 0; stage < numStages; ++stage)
     {
         auto& filter = _leftStages[static_cast<std::size_t>(stage)];
@@ -80,8 +80,9 @@ VoiceFilter::StereoSample VoiceFilter::processSample(float dryInput, float lfoLe
     auto rightWet = leftWet;
     if (_numChannels > 1)
     {
+        const auto drivenRight = driveSample(dryRight);
         const auto rightCutoff = juce::jlimit(20.0f, nyquistLimit, computeChannelCutoffHz(lfoRight));
-        rightWet = driven;
+        rightWet = drivenRight;
         for (int stage = 0; stage < numStages; ++stage)
         {
             auto& filter = _rightStages[static_cast<std::size_t>(stage)];
@@ -97,7 +98,7 @@ VoiceFilter::StereoSample VoiceFilter::processSample(float dryInput, float lfoLe
     const auto [dryGain, wetGain] = ndsp::DryWetUtils::splitDryWetValue<float>(
         juce::jlimit(0.0f, 1.0f, _parameters.mixPercent / 100.0f), juce::dsp::DryWetMixingRule::linear);
 
-    return { dryInput * dryGain + leftWet * wetGain, dryInput * dryGain + rightWet * wetGain };
+    return { dryLeft * dryGain + leftWet * wetGain, dryRight * dryGain + rightWet * wetGain };
 }
 
 float VoiceFilter::computeChannelCutoffHz(float lfoValue) const noexcept

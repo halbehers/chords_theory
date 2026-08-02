@@ -17,6 +17,7 @@ add_executable(${PROJECT_NAME}_Tests
         DahdsrEnvelopeTests.cpp
         VoiceFilterTests.cpp
         LfoTests.cpp
+        OscillatorTests.cpp
         SectionPanelChangeTests.cpp
         main.cpp
 )
