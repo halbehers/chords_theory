@@ -302,6 +302,61 @@ TEST_CASE("Oscillator: sub-oscillator's -2 octave toggle halves its frequency ag
     }
 }
 
+TEST_CASE("Oscillator: transposeSemitones of +12 is numerically identical to one octave up", "[Oscillator]")
+{
+    // 2^(12/12) == 2^1 exactly - transposeSemitones is a separate multiplier term from octave
+    // (see Oscillator::recomputePhaseIncrements), so this is a genuine cross-check that both
+    // reach the same frequency, not just two branches of the same code path agreeing with itself.
+    Oscillator viaOctave;
+    viaOctave.setSampleRate(kSampleRate);
+    Oscillator::Parameters octaveParams;
+    octaveParams.shape = Oscillator::Shape::Sine;
+    octaveParams.octave = 1;
+    octaveParams.phasePercent = 25.0f;
+    viaOctave.setBlockParameters(octaveParams);
+    viaOctave.noteOn(60);
+
+    Oscillator viaTranspose;
+    viaTranspose.setSampleRate(kSampleRate);
+    Oscillator::Parameters transposeParams;
+    transposeParams.shape = Oscillator::Shape::Sine;
+    transposeParams.transposeSemitones = 12;
+    transposeParams.phasePercent = 25.0f;
+    viaTranspose.setBlockParameters(transposeParams);
+    viaTranspose.noteOn(60);
+
+    for (int i = 0; i < 10; ++i)
+        CHECK_THAT(viaTranspose.getNextSample().left, WithinAbs(viaOctave.getNextSample().left, 1.0e-3f));
+}
+
+TEST_CASE("Oscillator: transposeSemitones stacks on top of octave rather than replacing it", "[Oscillator]")
+{
+    // octave=1 + transpose=12 should land exactly one octave above octave=1 alone (i.e. two
+    // octaves above the played note), proving the two terms multiply together rather than one
+    // overriding the other.
+    Oscillator::Parameters baseParams;
+    baseParams.shape = Oscillator::Shape::Sine;
+    baseParams.octave = 1;
+    baseParams.phasePercent = 25.0f;
+
+    Oscillator octavePlusTranspose;
+    octavePlusTranspose.setSampleRate(kSampleRate);
+    auto stackedParams = baseParams;
+    stackedParams.transposeSemitones = 12;
+    octavePlusTranspose.setBlockParameters(stackedParams);
+    octavePlusTranspose.noteOn(60);
+
+    Oscillator twoOctaves;
+    twoOctaves.setSampleRate(kSampleRate);
+    auto twoOctavesParams = baseParams;
+    twoOctavesParams.octave = 2;
+    twoOctaves.setBlockParameters(twoOctavesParams);
+    twoOctaves.noteOn(60);
+
+    for (int i = 0; i < 10; ++i)
+        CHECK_THAT(octavePlusTranspose.getNextSample().left, WithinAbs(twoOctaves.getNextSample().left, 1.0e-3f));
+}
+
 TEST_CASE("Oscillator: phasePercent sets the exact starting phase at noteOn", "[Oscillator]")
 {
     Oscillator osc;

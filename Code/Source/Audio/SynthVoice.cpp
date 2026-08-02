@@ -141,6 +141,7 @@ Oscillator::Parameters SynthVoice::readOscillatorParameters(const OscillatorStat
                       : Oscillator::Shape::Sine;
     parameters.shapeNoisePercent = state.shapeNoisePercent.load(std::memory_order_relaxed);
     parameters.octave = state.octave.load(std::memory_order_relaxed);
+    parameters.transposeSemitones = state.transposeSemitones.load(std::memory_order_relaxed);
     parameters.detuneCents = state.detuneCents.load(std::memory_order_relaxed);
     parameters.warpPercent = state.warpPercent.load(std::memory_order_relaxed);
     parameters.foldPercent = state.foldPercent.load(std::memory_order_relaxed);

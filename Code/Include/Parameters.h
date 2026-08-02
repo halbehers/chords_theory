@@ -26,6 +26,10 @@ struct Parameters
     static constexpr float OSC_OCTAVE_DEFAULT = 0.0f;
     static constexpr float OSC_OCTAVE_MIN = -3.0f;
     static constexpr float OSC_OCTAVE_MAX = 3.0f;
+    static constexpr char OSC_TRANSPOSE_SEMITONES_SUFFIX[] = "transpose-semitones";
+    static constexpr float OSC_TRANSPOSE_SEMITONES_DEFAULT = 0.0f;
+    static constexpr float OSC_TRANSPOSE_SEMITONES_MIN = -12.0f;
+    static constexpr float OSC_TRANSPOSE_SEMITONES_MAX = 12.0f;
     static constexpr char OSC_DETUNE_CENTS_SUFFIX[] = "detune-cents";
     static constexpr float OSC_DETUNE_CENTS_DEFAULT = 0.0f;
     static constexpr float OSC_DETUNE_CENTS_MIN = -50.0f;

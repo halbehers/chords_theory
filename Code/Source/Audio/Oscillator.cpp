@@ -64,8 +64,9 @@ void Oscillator::recomputePhaseIncrements() noexcept
         return;
 
     const auto octaveMultiplier = std::pow(2.0, static_cast<double>(_parameters.octave));
+    const auto transposeMultiplier = std::pow(2.0, static_cast<double>(_parameters.transposeSemitones) / 12.0);
     const auto detuneMultiplier = std::pow(2.0, static_cast<double>(_parameters.detuneCents) / 1200.0);
-    const auto centerFrequencyHz = _baseFrequencyHz * octaveMultiplier * detuneMultiplier;
+    const auto centerFrequencyHz = _baseFrequencyHz * octaveMultiplier * transposeMultiplier * detuneMultiplier;
 
     const auto numVoices = juce::jlimit(1, kMaxUnisonVoices, _parameters.unisonVoices);
 

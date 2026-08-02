@@ -17,6 +17,7 @@ struct OscillatorState
     std::atomic<int> shape { 0 };
     std::atomic<float> shapeNoisePercent { 0.0f };
     std::atomic<int> octave { 0 };
+    std::atomic<int> transposeSemitones { 0 };
     std::atomic<float> detuneCents { 0.0f };
     std::atomic<float> warpPercent { 0.0f };
     std::atomic<float> foldPercent { 0.0f };

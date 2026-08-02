@@ -20,13 +20,16 @@ TEST_CASE("Parameters ID constants are all non-empty and mutually distinct", "[P
 {
     // A copy-paste ID collision here would silently corrupt APVTS parameter registration - this
     // is a correctness net that stays useful as more parameters get added on top of the template.
-    // Oscillator IDs are prefix+suffix (osc1-/osc2- x 13 suffixes, see registerOscillatorParameters)
+    // Oscillator IDs are prefix+suffix (osc1-/osc2- x 14 suffixes, see registerOscillatorParameters)
     // rather than standalone ID constants like every other section - built here the same way
-    // registration itself builds them.
+    // registration itself builds them. Output/Sub Level/Sub Octave stay in this list even though
+    // no dial exposes them right now (see SynthOscillatorSection) - the underlying parameters are
+    // still registered and still need uniqueness checking.
     const std::vector<std::string> oscillatorSuffixes {
         Parameters::OSC_SHAPE_SUFFIX,
         Parameters::OSC_SHAPE_NOISE_PERCENT_SUFFIX,
         Parameters::OSC_OCTAVE_SUFFIX,
+        Parameters::OSC_TRANSPOSE_SEMITONES_SUFFIX,
         Parameters::OSC_DETUNE_CENTS_SUFFIX,
         Parameters::OSC_WARP_PERCENT_SUFFIX,
         Parameters::OSC_FOLD_PERCENT_SUFFIX,

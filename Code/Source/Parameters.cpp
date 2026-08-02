@@ -42,6 +42,14 @@ void Parameters::registerOscillatorParameters(PluginAudioProcessor* audioProcess
         [statePtr](float value) { statePtr->octave.store(static_cast<int>(std::round(value)), std::memory_order_relaxed); },
         "Coarse tuning, in whole octaves.");
 
+    juce::NormalisableRange<float> transposeRange(OSC_TRANSPOSE_SEMITONES_MIN, OSC_TRANSPOSE_SEMITONES_MAX, 1.0f);
+    audioProcessor->registerParameter<float>(
+        std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { idPrefix + OSC_TRANSPOSE_SEMITONES_SUFFIX, 1 }, "Transpose", transposeRange, OSC_TRANSPOSE_SEMITONES_DEFAULT),
+        ndsp::IParameter::TYPE_FLOAT, OSC_TRANSPOSE_SEMITONES_DEFAULT, OSC_TRANSPOSE_SEMITONES_MIN, OSC_TRANSPOSE_SEMITONES_MAX,
+        [statePtr](float value) { statePtr->transposeSemitones.store(static_cast<int>(std::round(value)), std::memory_order_relaxed); },
+        "Fine tuning on top of Octave, in semitones.");
+
     audioProcessor->registerParameter(
         idPrefix + OSC_DETUNE_CENTS_SUFFIX, "Detune", OSC_DETUNE_CENTS_DEFAULT, OSC_DETUNE_CENTS_MIN, OSC_DETUNE_CENTS_MAX,
         [statePtr](float value) { statePtr->detuneCents.store(value, std::memory_order_relaxed); },

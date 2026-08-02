@@ -38,6 +38,7 @@ public:
         Shape shape = Shape::Sine;
         float shapeNoisePercent = 0.0f;    // 0..100
         int   octave = 0;                  // -3..+3
+        int   transposeSemitones = 0;      // -12..+12, added on top of octave
         float detuneCents = 0.0f;          // -50..+50
         float warpPercent = 0.0f;          // -100..+100
         float foldPercent = 0.0f;          // 0..100
