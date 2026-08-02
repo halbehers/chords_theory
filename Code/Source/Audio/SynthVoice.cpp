@@ -135,6 +135,7 @@ Oscillator::Parameters SynthVoice::readOscillatorParameters(const OscillatorStat
     const auto shapeIndex = state.shape.load(std::memory_order_relaxed);
 
     Oscillator::Parameters parameters;
+    parameters.enabled = state.enabled.load(std::memory_order_relaxed);
     parameters.shape = shapeIndex == 1 ? Oscillator::Shape::Triangle
                       : shapeIndex == 2 ? Oscillator::Shape::Saw
                       : shapeIndex == 3 ? Oscillator::Shape::Square

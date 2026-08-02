@@ -27,6 +27,15 @@ SynthAdsrSection::SynthAdsrSection(const std::string& identifier, ndsp::Paramete
     addAndMakeVisible(_sustainDial);
     addAndMakeVisible(_releaseDial);
 
+    _delayDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _attackDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _holdDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _decayDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _sustainDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _releaseDial.setHeightType(nui::Theme::HeightType::LARGE);
+
+    _envelopeCurve.displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
+
     setGap(8.f);
     setLayoutMargin(kSynthSectionPadding);
     getLayout().setDisplayGrid(false);

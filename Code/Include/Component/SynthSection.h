@@ -16,10 +16,19 @@ namespace component
 // (e.g. SynthLfoSection's _syncDivisionDial) are constructed, so a call made from SynthSection's
 // constructor could never safely reach an override that touches them - only by the time the
 // derived class's own constructor body is running are those members guaranteed to exist.
+//
+// enabledParameterID is optional (empty = no bypass toggle, matching nui::Section's own default) -
+// passed straight through to Section, whose constructor already shows/wires the power-icon toggle
+// button for a non-empty ID. That toggle's own live clicks correctly call Section::setBypass() via
+// Section::onToggleValueChanged(), but its *initial* state (loaded/default parameter value) does
+// not - Section's own bypass wiring only reacts to actual button clicks, not the ButtonAttachment's
+// silent construction-time sync. A derived class using a non-empty enabledParameterID must
+// therefore call setBypass() itself once, from its own constructor body, to match the parameter's
+// real current value - see SynthOscillatorSection for the pattern.
 class SynthSection : public nui::Section
 {
 public:
-    SynthSection(const std::string& identifier, ndsp::ParameterManager& parameterManager);
+    SynthSection(const std::string& identifier, ndsp::ParameterManager& parameterManager, const std::string& enabledParameterID = "");
     ~SynthSection() override;
 
 protected:

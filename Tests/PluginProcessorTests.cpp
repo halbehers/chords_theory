@@ -45,6 +45,7 @@ TEST_CASE("Parameters ID constants are all non-empty and mutually distinct", "[P
 
     std::vector<std::string> ids {
         Parameters::PLUGIN_ENABLED_ID,
+        Parameters::OSC2_ENABLED_ID,
         Parameters::ENVELOPE_DELAY_MS_ID,
         Parameters::ENVELOPE_ATTACK_MS_ID,
         Parameters::ENVELOPE_HOLD_MS_ID,

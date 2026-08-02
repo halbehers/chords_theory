@@ -161,6 +161,12 @@ Oscillator::StereoSample Oscillator::getNextSample() noexcept
     sumLeft *= outputGain;
     sumRight *= outputGain;
 
+    // Gated last, after every phase (unison + sub) has still advanced normally above - toggling
+    // enabled on/off mid-note is click-free by construction, same principle as the unison-voice-
+    // count and Fold/Warp gating elsewhere in this class.
+    if (!_parameters.enabled)
+        return { 0.0f, 0.0f };
+
     return { sumLeft, sumRight };
 }
 

@@ -31,6 +31,16 @@ SynthLfoSection::SynthLfoSection(const std::string& identifier, ndsp::ParameterM
     addAndMakeVisible(_stereoDial);
     addAndMakeVisible(_depthDial);
 
+    _syncDivisionDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _rateDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _smoothDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _delayDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _stereoDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _depthDial.setHeightType(nui::Theme::HeightType::LARGE);
+
+    _lfoCurve.displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
+    _shapeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+
     _syncToggle.addOnValueChangedListener(this);
     _syncToggle.setIconSize(14.f);
     _modeToggle.setIconSize(14.f);

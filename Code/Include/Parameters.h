@@ -66,6 +66,13 @@ struct Parameters
     static constexpr char OSC1_ID_PREFIX[] = "osc1-";
     static constexpr char OSC2_ID_PREFIX[] = "osc2-";
 
+    // Oscillator 2 only - oscillator 1 has no enable/disable toggle at all (see
+    // SynthOscillatorSection), so this isn't part of the shared registerOscillatorParameters
+    // helper above; it's its own full ID constant, registered directly in registerSection's
+    // OSCILLATOR case.
+    static constexpr char OSC2_ENABLED_ID[] = "osc2-enabled";
+    static constexpr bool OSC2_ENABLED_DEFAULT = false;
+
     // Synth envelope (Delay-Attack-Hold-Decay-Sustain-Release).
     static constexpr char ENVELOPE_DELAY_MS_ID[] = "envelope-delay-ms";
     static constexpr float ENVELOPE_DELAY_MS_DEFAULT = 0.0f;

@@ -28,6 +28,16 @@ SynthFilterSection::SynthFilterSection(const std::string& identifier, ndsp::Para
     addAndMakeVisible(_mixDial);
     addAndMakeVisible(_keyTrackDial);
 
+    _responseCurve.displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
+    _typeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+    _slopeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+
+    _cutoffDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _resonanceDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _driveDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _mixDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _keyTrackDial.setHeightType(nui::Theme::HeightType::LARGE);
+
     setGap(8.f);
     setLayoutMargin(kSynthSectionPadding);
     getLayout().setDisplayGrid(false);

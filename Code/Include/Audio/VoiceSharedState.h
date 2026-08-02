@@ -14,6 +14,10 @@ namespace audio
 // comment) - re-snapshotted once per renderNextBlock, same as the Filter/LFO blocks.
 struct OscillatorState
 {
+    // Only oscillator2 ever has this driven by a real UI toggle (see
+    // SynthOscillatorSection/Parameters::registerSection's OSCILLATOR case) - oscillator1 has no
+    // enable/disable control at all, so this simply stays at its default (always on) forever.
+    std::atomic<bool> enabled { true };
     std::atomic<int> shape { 0 };
     std::atomic<float> shapeNoisePercent { 0.0f };
     std::atomic<int> octave { 0 };

@@ -5,11 +5,10 @@
 namespace component
 {
 
-SynthSection::SynthSection(const std::string& identifier, ndsp::ParameterManager& parameterManager):
-    Section(identifier, parameterManager)
+SynthSection::SynthSection(const std::string& identifier, ndsp::ParameterManager& parameterManager, const std::string& enabledParameterID):
+    Section(identifier, parameterManager, enabledParameterID)
 {
-    displayBorder();
-    displayBackground();
+    nui::Component::displayBackground(nui::Theme::SECONDARY_BACKGROUND, nui::Theme::getBorderRadius());
     
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
 }

@@ -28,8 +28,8 @@ PluginAudioProcessor::PluginAudioProcessor()
                     { nui::Theme::PRIMARY, juce::Colour(0xFF272727) },
                     { nui::Theme::ACCENT, juce::Colour(0xFF53F4FB) },
                     { nui::Theme::SECONDARY_ACCENT, juce::Colour(0xFFE19EA9) },
-                    { nui::Theme::BACKGROUND, juce::Colour(0xFF191819) },
-                    { nui::Theme::SECONDARY_BACKGROUND, juce::Colour(0xFF222122) },
+                    { nui::Theme::BACKGROUND, juce::Colour(0xFF222122) },
+                    { nui::Theme::SECONDARY_BACKGROUND, juce::Colour(0xFF333233) },
                     { nui::Theme::BORDER, juce::Colour(0xFF303030) },
                 }
             },

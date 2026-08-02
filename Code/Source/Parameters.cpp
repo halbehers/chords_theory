@@ -278,6 +278,12 @@ void Parameters::registerSection(Section section, PluginAudioProcessor* audioPro
             auto* sharedState = &audioProcessor->getSynthEngine().getSharedState();
             registerOscillatorParameters(audioProcessor, OSC1_ID_PREFIX, sharedState->oscillator1, OSC_OUTPUT_DB_DEFAULT);
             registerOscillatorParameters(audioProcessor, OSC2_ID_PREFIX, sharedState->oscillator2, audio::VoiceSharedState::kOscillator2DefaultOutputDb);
+
+            auto* oscillator2State = &sharedState->oscillator2;
+            audioProcessor->registerParameter(
+                OSC2_ENABLED_ID, "Oscillator 2 Enabled", OSC2_ENABLED_DEFAULT,
+                [oscillator2State](bool value) { oscillator2State->enabled.store(value, std::memory_order_relaxed); },
+                "Turns Oscillator 2 on or off.");
             break;
         }
         case ENVELOPE:

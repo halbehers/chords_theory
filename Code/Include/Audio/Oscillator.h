@@ -35,6 +35,7 @@ public:
 
     struct Parameters
     {
+        bool  enabled = true;              // false silences output entirely, phase still advances
         Shape shape = Shape::Sine;
         float shapeNoisePercent = 0.0f;    // 0..100
         int   octave = 0;                  // -3..+3

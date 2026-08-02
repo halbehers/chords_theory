@@ -31,6 +31,43 @@ TEST_CASE("Oscillator: Sine shape reaches its known peak a quarter-cycle after n
     CHECK_THAT(first.right, WithinAbs(1.0f, 1.0e-3f));
 }
 
+TEST_CASE("Oscillator: enabled=false silences output but keeps advancing phase, so re-enabling mid-note is click-free", "[Oscillator]")
+{
+    Oscillator reference;
+    reference.setSampleRate(kSampleRate);
+    Oscillator::Parameters referenceParams;
+    referenceParams.shape = Oscillator::Shape::Sine;
+    referenceParams.phasePercent = 25.0f;
+    reference.setBlockParameters(referenceParams);
+    reference.noteOn(60);
+
+    Oscillator gated;
+    gated.setSampleRate(kSampleRate);
+    auto gatedParams = referenceParams;
+    gatedParams.enabled = false;
+    gated.setBlockParameters(gatedParams);
+    gated.noteOn(60);
+
+    // While disabled, output is exactly silent even though the reference (identical settings,
+    // just enabled) is clearly not - proving this is a real gate, not a coincidental zero.
+    for (int i = 0; i < 10; ++i)
+    {
+        const auto referenceSample = reference.getNextSample();
+        const auto gatedSample = gated.getNextSample();
+        REQUIRE(std::abs(referenceSample.left) > 0.01f);
+        CHECK_THAT(gatedSample.left, WithinAbs(0.0f, 1.0e-6f));
+        CHECK_THAT(gatedSample.right, WithinAbs(0.0f, 1.0e-6f));
+    }
+
+    // Re-enabling mid-note (without a fresh noteOn) should immediately match the reference, proving
+    // the phase kept advancing underneath the whole time rather than freezing while gated.
+    gatedParams.enabled = true;
+    gated.setBlockParameters(gatedParams);
+
+    for (int i = 0; i < 10; ++i)
+        CHECK_THAT(gated.getNextSample().left, WithinAbs(reference.getNextSample().left, 1.0e-3f));
+}
+
 TEST_CASE("Oscillator: Triangle shape hits its known -1/+1 extremes at phase 0 and 0.5", "[Oscillator]")
 {
     Oscillator osc;
