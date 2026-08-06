@@ -32,18 +32,24 @@ SynthFilterSection::SynthFilterSection(const std::string& identifier, ndsp::Para
     _typeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
     _slopeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
 
-    _cutoffDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _resonanceDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _driveDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _mixDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _keyTrackDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _cutoffDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _resonanceDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _driveDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _mixDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _keyTrackDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+
+    _cutoffDial.setLabelGap(8.f);
+    _resonanceDial.setLabelGap(8.f);
+    _driveDial.setLabelGap(8.f);
+    _mixDial.setLabelGap(8.f);
+    _keyTrackDial.setLabelGap(8.f);
 
     setGap(8.f);
     setLayoutMargin(kSynthSectionPadding);
     getLayout().setDisplayGrid(false);
     getLayout().init({ 1, 3, 1 }, { 1, 1, 1, 1, 1 });
     getLayout().setFixedRowHeight(0, 28.f);
-    getLayout().setFixedRowHeight(2, 90.f);
+    getLayout().setFixedRowHeight(2, 75.f);
 
     getLayout().addComponent(_typeCycler, 0, 0, 2, 1);
     getLayout().addComponent(_slopeCycler, 0, 2, 3, 1);

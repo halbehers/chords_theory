@@ -18,6 +18,9 @@ add_executable(${PROJECT_NAME}_Tests
         VoiceFilterTests.cpp
         LfoTests.cpp
         OscillatorTests.cpp
+        SubOscillatorTests.cpp
+        SynthAlgorithmTests.cpp
+        MasterCompressorTests.cpp
         SectionPanelChangeTests.cpp
         main.cpp
 )

@@ -89,16 +89,6 @@ void Parameters::registerOscillatorParameters(PluginAudioProcessor* audioProcess
         "Stereo width of the unison voice spread, as a percentage.");
 
     audioProcessor->registerParameter(
-        idPrefix + OSC_SUB_LEVEL_PERCENT_SUFFIX, "Sub Level", OSC_SUB_LEVEL_PERCENT_DEFAULT, 0.0f, 100.0f,
-        [statePtr](float value) { statePtr->subLevelPercent.store(value, std::memory_order_relaxed); },
-        "Level of a plain sine sub-oscillator layer, as a percentage.");
-
-    audioProcessor->registerParameter(
-        idPrefix + OSC_SUB_OCTAVE_DOWN2_ENABLED_SUFFIX, "Sub Octave", OSC_SUB_OCTAVE_DOWN2_ENABLED_DEFAULT,
-        [statePtr](bool value) { statePtr->subOctaveDown2.store(value, std::memory_order_relaxed); },
-        "Off: sub-oscillator is one octave below the note. On: two octaves below.");
-
-    audioProcessor->registerParameter(
         idPrefix + OSC_PHASE_PERCENT_SUFFIX, "Phase", OSC_PHASE_PERCENT_DEFAULT, 0.0f, 100.0f,
         [statePtr](float value) { statePtr->phasePercent.store(value, std::memory_order_relaxed); },
         "Starting phase for every new note, as a percentage of a full cycle.");
@@ -107,6 +97,75 @@ void Parameters::registerOscillatorParameters(PluginAudioProcessor* audioProcess
         idPrefix + OSC_PHASE_RANDOMIZE_ENABLED_SUFFIX, "Phase Randomize", OSC_PHASE_RANDOMIZE_ENABLED_DEFAULT,
         [statePtr](bool value) { statePtr->phaseRandomizeEnabled.store(value, std::memory_order_relaxed); },
         "Ignore the Phase dial and start every new note at a random phase instead.");
+}
+
+void Parameters::registerSubParameters(PluginAudioProcessor* audioProcessor)
+{
+    auto* subState = &audioProcessor->getSynthEngine().getSharedState().subOscillator;
+
+    audioProcessor->registerParameter(
+        SUB_ENABLED_ID, "Sub Enabled", SUB_ENABLED_DEFAULT,
+        [subState](bool value) { subState->enabled.store(value, std::memory_order_relaxed); },
+        "Turns the sub-oscillator layer on or off.");
+
+    juce::NormalisableRange<float> octaveRange(SUB_OCTAVE_MIN, SUB_OCTAVE_MAX, 1.0f);
+    audioProcessor->registerParameter<float>(
+        std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { SUB_OCTAVE_ID, 1 }, "Sub Octave", octaveRange, SUB_OCTAVE_DEFAULT),
+        ndsp::IParameter::TYPE_FLOAT, SUB_OCTAVE_DEFAULT, SUB_OCTAVE_MIN, SUB_OCTAVE_MAX,
+        [subState](float value) { subState->octave.store(static_cast<int>(std::round(value)), std::memory_order_relaxed); },
+        "Coarse tuning, in whole octaves.");
+
+    juce::NormalisableRange<float> transposeRange(SUB_TRANSPOSE_SEMITONES_MIN, SUB_TRANSPOSE_SEMITONES_MAX, 1.0f);
+    audioProcessor->registerParameter<float>(
+        std::make_unique<juce::AudioParameterFloat>(
+            juce::ParameterID { SUB_TRANSPOSE_SEMITONES_ID, 1 }, "Sub Transpose", transposeRange, SUB_TRANSPOSE_SEMITONES_DEFAULT),
+        ndsp::IParameter::TYPE_FLOAT, SUB_TRANSPOSE_SEMITONES_DEFAULT, SUB_TRANSPOSE_SEMITONES_MIN, SUB_TRANSPOSE_SEMITONES_MAX,
+        [subState](float value) { subState->transposeSemitones.store(static_cast<int>(std::round(value)), std::memory_order_relaxed); },
+        "Fine tuning on top of Octave, in semitones.");
+
+    audioProcessor->registerParameter(
+        SUB_TONE_PERCENT_ID, "Sub Tone", SUB_TONE_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [subState](float value) { subState->tonePercent.store(value, std::memory_order_relaxed); },
+        "Blends the sub-oscillator's waveform from a sine (0%) to a PolyBLEP-corrected square (100%).");
+
+    audioProcessor->registerParameter(
+        SUB_OUTPUT_DB_ID, "Sub Output", SUB_OUTPUT_DB_DEFAULT, SUB_OUTPUT_DB_MIN, SUB_OUTPUT_DB_MAX,
+        [subState](float value) { subState->outputDb.store(value, std::memory_order_relaxed); },
+        "Sub-oscillator output level, in decibels.");
+}
+
+void Parameters::registerMixerParameters(PluginAudioProcessor* audioProcessor)
+{
+    auto* mixerState = &audioProcessor->getSynthEngine().getSharedState().mixer;
+
+    audioProcessor->registerParameter<int>(
+        std::make_unique<juce::AudioParameterChoice>(
+            juce::ParameterID { MIXER_ALGORITHM_ID, 1 }, "Mixer Algorithm",
+            juce::StringArray { "Add", "FM", "Ring Mod", "AM", "Serial Fold" }, MIXER_ALGORITHM_DEFAULT),
+        ndsp::IParameter::TYPE_INT, MIXER_ALGORITHM_DEFAULT, 0, 4,
+        [mixerState](int value) { mixerState->algorithmIndex.store(value, std::memory_order_relaxed); },
+        "How Oscillator 1 and Oscillator 2 combine.");
+
+    audioProcessor->registerParameter(
+        MIXER_FM_AMOUNT_PERCENT_ID, "FM Amount", MIXER_FM_AMOUNT_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [mixerState](float value) { mixerState->fmAmountPercent.store(value, std::memory_order_relaxed); },
+        "FM algorithm: modulation depth, as a percentage.");
+
+    audioProcessor->registerParameter(
+        MIXER_RING_MOD_MIX_PERCENT_ID, "Ring Mod Mix", MIXER_RING_MOD_MIX_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [mixerState](float value) { mixerState->ringModMixPercent.store(value, std::memory_order_relaxed); },
+        "Ring Mod algorithm: crossfade between plain addition and full ring modulation, as a percentage.");
+
+    audioProcessor->registerParameter(
+        MIXER_AM_DEPTH_PERCENT_ID, "AM Depth", MIXER_AM_DEPTH_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [mixerState](float value) { mixerState->amDepthPercent.store(value, std::memory_order_relaxed); },
+        "AM algorithm: modulation depth, as a percentage.");
+
+    audioProcessor->registerParameter(
+        MIXER_SERIAL_FOLD_AMOUNT_PERCENT_ID, "Fold Amount", MIXER_SERIAL_FOLD_AMOUNT_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [mixerState](float value) { mixerState->serialFoldAmountPercent.store(value, std::memory_order_relaxed); },
+        "Serial Fold algorithm: wavefold amount driven by Oscillator 2, as a percentage.");
 }
 
 void Parameters::registerEnvelopeParameters(PluginAudioProcessor* audioProcessor)
@@ -266,6 +325,32 @@ void Parameters::registerLfoParameters(PluginAudioProcessor* audioProcessor)
         "How strongly the LFO modulates the filter cutoff, as a percentage.");
 }
 
+void Parameters::registerOutputParameters(PluginAudioProcessor* audioProcessor)
+{
+    auto* sharedState = &audioProcessor->getSynthEngine().getSharedState();
+    auto* masterBusState = &audioProcessor->getSynthEngine().getMasterBusState();
+
+    audioProcessor->registerParameter(
+        TUNING_REFERENCE_HZ_ID, "Tuning", TUNING_REFERENCE_HZ_DEFAULT, TUNING_REFERENCE_HZ_MIN, TUNING_REFERENCE_HZ_MAX,
+        [sharedState](float value) { sharedState->tuningReferenceHz.store(value, std::memory_order_relaxed); },
+        "Reference pitch for A4, in Hz.");
+
+    audioProcessor->registerParameter(
+        COMPRESSOR_AMOUNT_PERCENT_ID, "Compressor", COMPRESSOR_AMOUNT_PERCENT_DEFAULT, 0.0f, 100.0f,
+        [masterBusState](float value) { masterBusState->compressorAmountPercent.store(value, std::memory_order_relaxed); },
+        "One-knob master bus compressor amount, as a percentage.");
+
+    audioProcessor->registerParameter(
+        PAN_PERCENT_ID, "Pan", PAN_PERCENT_DEFAULT, PAN_PERCENT_MIN, PAN_PERCENT_MAX,
+        [masterBusState](float value) { masterBusState->panPercent.store(value, std::memory_order_relaxed); },
+        "Master output pan, from -100 (left) to 100 (right).");
+
+    audioProcessor->registerParameter(
+        OUTPUT_DB_ID, "Output", OUTPUT_DB_DEFAULT, OUTPUT_DB_MIN, OUTPUT_DB_MAX,
+        [masterBusState](float value) { masterBusState->outputDb.store(value, std::memory_order_relaxed); },
+        "Master output level, in decibels.");
+}
+
 void Parameters::registerSection(Section section, PluginAudioProcessor* audioProcessor)
 {
     switch (section)
@@ -286,6 +371,12 @@ void Parameters::registerSection(Section section, PluginAudioProcessor* audioPro
                 "Turns Oscillator 2 on or off.");
             break;
         }
+        case SUB:
+            registerSubParameters(audioProcessor);
+            break;
+        case MIXER:
+            registerMixerParameters(audioProcessor);
+            break;
         case ENVELOPE:
             registerEnvelopeParameters(audioProcessor);
             break;
@@ -295,6 +386,9 @@ void Parameters::registerSection(Section section, PluginAudioProcessor* audioPro
         case LFO:
             registerLfoParameters(audioProcessor);
             break;
+        case OUTPUT:
+            registerOutputParameters(audioProcessor);
+            break;
     }
 }
 
@@ -302,7 +396,10 @@ void Parameters::registerAllSections(PluginAudioProcessor* audioProcessor)
 {
     registerSection(Section::PLUGIN, audioProcessor);
     registerSection(Section::OSCILLATOR, audioProcessor);
+    registerSection(Section::SUB, audioProcessor);
+    registerSection(Section::MIXER, audioProcessor);
     registerSection(Section::ENVELOPE, audioProcessor);
     registerSection(Section::FILTER, audioProcessor);
     registerSection(Section::LFO, audioProcessor);
+    registerSection(Section::OUTPUT, audioProcessor);
 }

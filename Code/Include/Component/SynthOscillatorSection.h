@@ -25,7 +25,7 @@ private:
     std::string _sectionTitleKey;
 
     nelement::Cycler _shapeCycler;
-    nelement::OscillatorCurve _curve;
+    nelement::OscillatorCurveWithParameters _curve;
     nelement::Dial _octaveDial;
     nelement::Dial _detuneDial;
     nelement::Dial _transposeDial;

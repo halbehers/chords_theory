@@ -5,7 +5,7 @@
 
 #include <nierika_dsp/nierika_dsp.h>
 
-#include "Audio/ChordSynthEngine.h"
+#include "PluginProcessor.h"
 #include "Component/ChordDegreeBrowser.h"
 #include "Component/KeyScaleSelector.h"
 #include "Component/ProgressionSequencer.h"
@@ -19,10 +19,11 @@ class AppLayout final : public nlayout::AppLayout,
                          public component::KeyScaleSelector::Listener,
                          public component::ChordDegreeBrowser::Listener,
                          public component::ProgressionSequencer::Listener,
+                         public component::VoicingSelector::Listener,
                          public nui::Section::OnPanelChangedListener
 {
 public:
-    AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynthEngine& synthEngine);
+    AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProcessor& audioProcessor);
     ~AppLayout() override;
 
     void resized() override;
@@ -37,6 +38,7 @@ private:
     void onChordDragStarted(theory::Degree degree, const theory::Chord& chord) override;
     void onChordPreviewRequested(theory::Degree degree, const theory::Chord& chord) override;
     void onVoicingSelectorRequested(theory::Degree degree, const std::vector<theory::Chord>& availableVoicings, const std::string& currentSymbol) override;
+    void onVoicingSelectorClosed() override;
 
     void onSlotFileDropped(int slotIndex, const juce::String& filePath) override;
     void onProgressionDragStarted() override;
@@ -58,6 +60,8 @@ private:
     // already open). No-op while the selector is closed.
     void updateVoicingSelectorArrow();
 
+    void setVoicingVisibility(bool isVisible);
+
     // Rebuilds the "ChordsTheoryState" child of _parameterManager.getState().state from the
     // current UI state - called after any change so the state is always current even if the
     // editor later closes (getStateInformation serializes the whole tree, including this child,
@@ -68,7 +72,7 @@ private:
     // instance) and applies it to the UI. Called once, at construction.
     void restoreStateFromValueTree();
 
-    audio::ChordSynthEngine& _synthEngine;
+    PluginAudioProcessor& _audioProcessor;
 
     nelement::SVGButton _settings;
     component::KeyScaleSelector _keyScaleSelector;

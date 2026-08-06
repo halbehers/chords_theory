@@ -54,10 +54,6 @@ struct Parameters
     static constexpr float OSC_UNISON_DETUNE_CENTS_MAX = 50.0f;
     static constexpr char OSC_UNISON_STEREO_PERCENT_SUFFIX[] = "unison-stereo-percent";
     static constexpr float OSC_UNISON_STEREO_PERCENT_DEFAULT = 0.0f;
-    static constexpr char OSC_SUB_LEVEL_PERCENT_SUFFIX[] = "sub-level-percent";
-    static constexpr float OSC_SUB_LEVEL_PERCENT_DEFAULT = 0.0f;
-    static constexpr char OSC_SUB_OCTAVE_DOWN2_ENABLED_SUFFIX[] = "sub-octave-down2-enabled";
-    static constexpr bool OSC_SUB_OCTAVE_DOWN2_ENABLED_DEFAULT = false;
     static constexpr char OSC_PHASE_PERCENT_SUFFIX[] = "phase-percent";
     static constexpr float OSC_PHASE_PERCENT_DEFAULT = 0.0f;
     static constexpr char OSC_PHASE_RANDOMIZE_ENABLED_SUFFIX[] = "phase-randomize-enabled";
@@ -72,6 +68,45 @@ struct Parameters
     // OSCILLATOR case.
     static constexpr char OSC2_ENABLED_ID[] = "osc2-enabled";
     static constexpr bool OSC2_ENABLED_DEFAULT = false;
+
+    // Synth sub-oscillator (see SynthSubSection) - a single, dedicated low-end layer, distinct
+    // from each main oscillator's own Octave/Transpose. Defaults to disabled (same "silent until
+    // touched" convention as Oscillator 2) and one octave below the note when enabled, matching
+    // the plain sub-oscillator layer this replaced inside Oscillator itself.
+    static constexpr char SUB_ENABLED_ID[] = "sub-enabled";
+    static constexpr bool SUB_ENABLED_DEFAULT = false;
+    static constexpr char SUB_OCTAVE_ID[] = "sub-octave";
+    static constexpr float SUB_OCTAVE_DEFAULT = -1.0f;
+    static constexpr float SUB_OCTAVE_MIN = -3.0f;
+    static constexpr float SUB_OCTAVE_MAX = 3.0f;
+    static constexpr char SUB_TRANSPOSE_SEMITONES_ID[] = "sub-transpose-semitones";
+    static constexpr float SUB_TRANSPOSE_SEMITONES_DEFAULT = 0.0f;
+    static constexpr float SUB_TRANSPOSE_SEMITONES_MIN = -12.0f;
+    static constexpr float SUB_TRANSPOSE_SEMITONES_MAX = 12.0f;
+    static constexpr char SUB_TONE_PERCENT_ID[] = "sub-tone-percent";
+    static constexpr float SUB_TONE_PERCENT_DEFAULT = 0.0f; // 0 = pure sine, matching the old sub layer's plain-sine default
+    static constexpr char SUB_OUTPUT_DB_ID[] = "sub-output-db";
+    static constexpr float SUB_OUTPUT_DB_DEFAULT = 0.0f; // unity - `enabled` already handles silence-by-default
+    static constexpr float SUB_OUTPUT_DB_MIN = -24.0f;
+    static constexpr float SUB_OUTPUT_DB_MAX = 6.0f;
+
+    // Synth mixer (see SynthMixerSection) - how oscillator 1 and oscillator 2 combine, plus the
+    // Sub/Osc1/Osc2 level sliders (the latter two bind directly to each oscillator's own
+    // pre-existing OSC_OUTPUT_DB_SUFFIX parameter, not a new mixer-scoped one). Each parameterized
+    // algorithm gets its own independent amount parameter (not one shared/reinterpreted value) -
+    // correct for automation/session recall, since switching algorithms must never make a
+    // previously-automated value suddenly mean something else. algorithmIndex order:
+    // 0=Add,1=FM,2=Ring Mod,3=AM,4=Serial Fold - matches SynthVoice's own fixed algorithm array.
+    static constexpr char MIXER_ALGORITHM_ID[] = "mixer-algorithm";
+    static constexpr int MIXER_ALGORITHM_DEFAULT = 0; // Add - identical to the plugin's original behavior
+    static constexpr char MIXER_FM_AMOUNT_PERCENT_ID[] = "mixer-fm-amount-percent";
+    static constexpr float MIXER_FM_AMOUNT_PERCENT_DEFAULT = 0.0f;
+    static constexpr char MIXER_RING_MOD_MIX_PERCENT_ID[] = "mixer-ring-mod-mix-percent";
+    static constexpr float MIXER_RING_MOD_MIX_PERCENT_DEFAULT = 0.0f;
+    static constexpr char MIXER_AM_DEPTH_PERCENT_ID[] = "mixer-am-depth-percent";
+    static constexpr float MIXER_AM_DEPTH_PERCENT_DEFAULT = 0.0f;
+    static constexpr char MIXER_SERIAL_FOLD_AMOUNT_PERCENT_ID[] = "mixer-serial-fold-amount-percent";
+    static constexpr float MIXER_SERIAL_FOLD_AMOUNT_PERCENT_DEFAULT = 0.0f;
 
     // Synth envelope (Delay-Attack-Hold-Decay-Sustain-Release).
     static constexpr char ENVELOPE_DELAY_MS_ID[] = "envelope-delay-ms";
@@ -142,13 +177,37 @@ struct Parameters
     static constexpr char LFO_DEPTH_PERCENT_ID[] = "lfo-depth-percent";
     static constexpr float LFO_DEPTH_PERCENT_DEFAULT = 0.0f;
 
+    // Synth output/master bus (see SynthOutputSection, MasterBus/MasterCompressor). Tuning writes
+    // into VoiceSharedState (read by every oscillator, per-voice), the other three into
+    // MasterBusState (read once per block by ChordSynthEngine's MasterBus) - both reachable
+    // through the existing getSynthEngine() accessor. All four defaults are no-ops (440Hz standard
+    // reference, compressor bypassed, centred pan, unity output), so a fresh instance is sonically
+    // unchanged from before this section existed.
+    static constexpr char TUNING_REFERENCE_HZ_ID[] = "tuning-reference-hz";
+    static constexpr float TUNING_REFERENCE_HZ_DEFAULT = 440.0f;
+    static constexpr float TUNING_REFERENCE_HZ_MIN = 415.0f;
+    static constexpr float TUNING_REFERENCE_HZ_MAX = 466.0f;
+    static constexpr char COMPRESSOR_AMOUNT_PERCENT_ID[] = "compressor-amount-percent";
+    static constexpr float COMPRESSOR_AMOUNT_PERCENT_DEFAULT = 0.0f;
+    static constexpr char PAN_PERCENT_ID[] = "pan-percent";
+    static constexpr float PAN_PERCENT_DEFAULT = 0.0f;
+    static constexpr float PAN_PERCENT_MIN = -100.0f;
+    static constexpr float PAN_PERCENT_MAX = 100.0f;
+    static constexpr char OUTPUT_DB_ID[] = "output-db";
+    static constexpr float OUTPUT_DB_DEFAULT = 0.0f;
+    static constexpr float OUTPUT_DB_MIN = -24.0f;
+    static constexpr float OUTPUT_DB_MAX = 6.0f;
+
     enum Section
     {
         PLUGIN,
         OSCILLATOR,
+        SUB,
+        MIXER,
         ENVELOPE,
         FILTER,
         LFO,
+        OUTPUT,
     };
 
     static void registerPluginParameters(PluginAudioProcessor* audioProcessor);
@@ -158,9 +217,12 @@ struct Parameters
     // VoiceSharedState::kOscillator2DefaultOutputDb) - every other default is shared, via the
     // OSC_*_DEFAULT constants above.
     static void registerOscillatorParameters(PluginAudioProcessor* audioProcessor, const std::string& idPrefix, audio::OscillatorState& state, float outputDbDefault);
+    static void registerSubParameters(PluginAudioProcessor* audioProcessor);
+    static void registerMixerParameters(PluginAudioProcessor* audioProcessor);
     static void registerEnvelopeParameters(PluginAudioProcessor* audioProcessor);
     static void registerFilterParameters(PluginAudioProcessor* audioProcessor);
     static void registerLfoParameters(PluginAudioProcessor* audioProcessor);
+    static void registerOutputParameters(PluginAudioProcessor* audioProcessor);
 
     static void registerSection(Section section, PluginAudioProcessor* audioProcessor);
     static void registerAllSections(PluginAudioProcessor* audioProcessor);

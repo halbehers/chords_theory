@@ -20,11 +20,11 @@ TEST_CASE("Parameters ID constants are all non-empty and mutually distinct", "[P
 {
     // A copy-paste ID collision here would silently corrupt APVTS parameter registration - this
     // is a correctness net that stays useful as more parameters get added on top of the template.
-    // Oscillator IDs are prefix+suffix (osc1-/osc2- x 14 suffixes, see registerOscillatorParameters)
+    // Oscillator IDs are prefix+suffix (osc1-/osc2- x 12 suffixes, see registerOscillatorParameters)
     // rather than standalone ID constants like every other section - built here the same way
-    // registration itself builds them. Output/Sub Level/Sub Octave stay in this list even though
-    // no dial exposes them right now (see SynthOscillatorSection) - the underlying parameters are
-    // still registered and still need uniqueness checking.
+    // registration itself builds them. Output stays in this list even though no dial exposes it
+    // right now (see SynthOscillatorSection) - the underlying parameter is still registered and
+    // still needs uniqueness checking.
     const std::vector<std::string> oscillatorSuffixes {
         Parameters::OSC_SHAPE_SUFFIX,
         Parameters::OSC_SHAPE_NOISE_PERCENT_SUFFIX,
@@ -37,8 +37,6 @@ TEST_CASE("Parameters ID constants are all non-empty and mutually distinct", "[P
         Parameters::OSC_UNISON_VOICES_SUFFIX,
         Parameters::OSC_UNISON_DETUNE_CENTS_SUFFIX,
         Parameters::OSC_UNISON_STEREO_PERCENT_SUFFIX,
-        Parameters::OSC_SUB_LEVEL_PERCENT_SUFFIX,
-        Parameters::OSC_SUB_OCTAVE_DOWN2_ENABLED_SUFFIX,
         Parameters::OSC_PHASE_PERCENT_SUFFIX,
         Parameters::OSC_PHASE_RANDOMIZE_ENABLED_SUFFIX,
     };
@@ -46,6 +44,16 @@ TEST_CASE("Parameters ID constants are all non-empty and mutually distinct", "[P
     std::vector<std::string> ids {
         Parameters::PLUGIN_ENABLED_ID,
         Parameters::OSC2_ENABLED_ID,
+        Parameters::SUB_ENABLED_ID,
+        Parameters::SUB_OCTAVE_ID,
+        Parameters::SUB_TRANSPOSE_SEMITONES_ID,
+        Parameters::SUB_TONE_PERCENT_ID,
+        Parameters::SUB_OUTPUT_DB_ID,
+        Parameters::MIXER_ALGORITHM_ID,
+        Parameters::MIXER_FM_AMOUNT_PERCENT_ID,
+        Parameters::MIXER_RING_MOD_MIX_PERCENT_ID,
+        Parameters::MIXER_AM_DEPTH_PERCENT_ID,
+        Parameters::MIXER_SERIAL_FOLD_AMOUNT_PERCENT_ID,
         Parameters::ENVELOPE_DELAY_MS_ID,
         Parameters::ENVELOPE_ATTACK_MS_ID,
         Parameters::ENVELOPE_HOLD_MS_ID,
@@ -68,6 +76,10 @@ TEST_CASE("Parameters ID constants are all non-empty and mutually distinct", "[P
         Parameters::LFO_DELAY_MS_ID,
         Parameters::LFO_STEREO_PERCENT_ID,
         Parameters::LFO_DEPTH_PERCENT_ID,
+        Parameters::TUNING_REFERENCE_HZ_ID,
+        Parameters::COMPRESSOR_AMOUNT_PERCENT_ID,
+        Parameters::PAN_PERCENT_ID,
+        Parameters::OUTPUT_DB_ID,
     };
 
     for (const auto& suffix : oscillatorSuffixes)

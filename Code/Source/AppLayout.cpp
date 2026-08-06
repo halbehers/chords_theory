@@ -7,14 +7,14 @@
 #include "Theory/ResolvedProgressionSlot.h"
 #include "Theory/SessionStateSerializer.h"
 
-AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynthEngine& synthEngine):
+AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProcessor& audioProcessor):
     nlayout::AppLayout(parameterManager),
-    _synthEngine(synthEngine),
+    _audioProcessor(audioProcessor),
     _settings("settings", nui::Icons::getGear()),
     _keyScaleSelector("key-scale-selector"),
     _chordBrowser("chord-degree-browser"),
     _progressionSequencer("progression-sequencer", [this](const theory::ProgressionSlot& slot) { return _chordBrowser.resolveSlot(slot); }),
-    _synthEditor(parameterManager),
+    _synthEditor(parameterManager, &audioProcessor.getSynthEngine().getLeftWaveformFifo(), &audioProcessor.getSynthEngine().getRightWaveformFifo()),
     _mainSection("main-section", parameterManager),
     _windowsManager(*this)
 {
@@ -29,6 +29,8 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynth
 
     _progressionSequencer.addListener(this);
     _progressionSequencer.setScale(_keyScaleSelector.getScale());
+
+    _voicingSelector.addListener(this);
 
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
 
@@ -46,12 +48,22 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynth
     _mainSection.addPanel("synth-tab", juce::translate("synth_tab_label").toStdString());
 
     _mainSection.getLayout().setDisplayGrid(false);
-    _mainSection.getLayout().init({ 1, 1, 1 }, { 1 });
-    _mainSection.getLayout().setFixedRowHeight(0, 80.f);
-    _mainSection.getLayout().setFixedRowHeight(1, 80.f);
-    _mainSection.getLayout().addComponent(_chordBrowser, 0, 0, 1, 1);
-    _mainSection.getLayout().addComponent(_voicingSelector, 1, 0, 1, 1);
-    _mainSection.getLayout().addComponent(_progressionSequencer, 2, 0, 1, 1);
+    _mainSection.getLayout().init({ 1, 1, 1, 1 }, { 1, 1, 1, 1, 1, 1, 1, 1, 1 });
+
+    _mainSection.getLayout().setFixedColumnWidth(0, 24.f);
+    _mainSection.getLayout().setFixedColumnWidth(8, 24.f);
+    _mainSection.getLayout().setFixedColumnWidth(1, 32.f);
+    _mainSection.getLayout().setFixedColumnWidth(7, 32.f);
+    _mainSection.getLayout().setFixedColumnWidth(4, 450.f);
+    _mainSection.getLayout().setFixedRowHeight(0, 60.f);
+    _mainSection.getLayout().setFixedRowHeight(1, 64.f);
+    _mainSection.getLayout().setFixedRowHeight(1, 70.f);
+
+    _mainSection.getLayout().addComponent(_settings, 0, 1, 1, 1);
+    _mainSection.getLayout().addComponent(_keyScaleSelector, 0, 4, 1, 1);
+    _mainSection.getLayout().addComponent(_chordBrowser, 1, 3, 3, 1);
+    _mainSection.getLayout().addComponent(_voicingSelector, 2, 0, 9, 1);
+    _mainSection.getLayout().addComponent(_progressionSequencer, 3, 1, 7, 1);
 
     _mainSection.getLayout("synth-tab").setDisplayGrid(false);
     _mainSection.getLayout("synth-tab").init({ 1 }, { 1 });
@@ -61,22 +73,30 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, audio::ChordSynth
     getLayout().setDisplayGrid(false);
     getLayout().setResizableLineConfiguration({ .displayLine = false });
 
+    constexpr float bottomMargin = 24.f;
+
+
+    if (audioProcessor.isAudioUnit() || audioProcessor.isVst3())
+    {
+        getLayout().setMargin(0.f, 0.f, 24.f, bottomMargin);
+    }
 #if JUCE_MAC
-    getLayout().setMargin(24.f, 24.f + 16.f, 24.f, 24.f);
+    else
+    {
+        getLayout().setMargin(0.f, 24.f + 16.f, 0.f, bottomMargin);
+    }
 #else
-    getLayout().setMargin(24.f, 0.f, 24.f, 24.f);
+    else
+    {
+        getLayout().setMargin(0.f, 0.f, 0.f, bottomMargin);
+    }
 #endif
 
-    getLayout().init({ 1, 1 }, { 1, 1 }); // row0: settings/key-scale (fixed height), row1: _mainSection (flexible)
+    getLayout().init({ 1 }, { 1 }); // row0: settings/key-scale (fixed height), row1: _mainSection (flexible)
 
-    getLayout().setFixedRowHeight(0, 60.f);
-    getLayout().setFixedColumnWidth(0, 32.f);
+    getLayout().addComponent(_mainSection, 0, 0, 1, 1);
 
-    getLayout().addComponent(_settings, 0, 0, 1, 1);
-    getLayout().addComponent(_keyScaleSelector, 0, 1, 1, 1);
-    getLayout().addComponent(_mainSection, 1, 0, 2, 1);
-
-    _voicingSelector.setVisible(false); // must come after addComponent(), which calls addAndMakeVisible() internally
+    setVoicingVisibility(false);
 
     restoreStateFromValueTree();
 }
@@ -90,6 +110,7 @@ AppLayout::~AppLayout()
     _keyScaleSelector.removeListener(this);
     _chordBrowser.removeListener(this);
     _progressionSequencer.removeListener(this);
+    _voicingSelector.removeListener(this);
 }
 
 void AppLayout::changeListenerCallback(juce::ChangeBroadcaster* source)
@@ -108,7 +129,8 @@ void AppLayout::onPanelChanged(const std::string& newPanelID)
     if (newPanelID != MAIN_PANEL_ID)
         return;
 
-    _voicingSelector.setVisible(_openVoicingDegree.has_value());
+    const bool isVisible = _openVoicingDegree.has_value();
+    setVoicingVisibility(isVisible);
     updateVoicingSelectorArrow();
 }
 
@@ -133,9 +155,10 @@ void AppLayout::onKeyScaleChanged(theory::Key key, theory::Scale scale)
 {
     // setKeyAndScale() destroys and rebuilds every ChordCard from scratch - close the voicing
     // selector first so it never ends up pointing at a destroyed card or showing voicings for a
-    // degree that doesn't exist in the new scale (e.g. Minor Blues only has I/IV/V).
+    // degree that doesn't exist in the new scale (e.g. Minor Blues only has I/IV/V). close()'s own
+    // onVoicingSelectorClosed() notification (see below) handles resetting visibility/row height/
+    // _openVoicingDegree uniformly, the same as if the user had closed it via its own close button.
     _voicingSelector.close();
-    _openVoicingDegree.reset();
 
     _chordBrowser.setKeyAndScale(key, scale);
     _progressionSequencer.setScale(scale);
@@ -173,7 +196,7 @@ void AppLayout::onChordPreviewRequested(const theory::Chord& chord)
 
 void AppLayout::previewChord(const theory::Chord& chord)
 {
-    _synthEngine.previewChord(theory::NoteConvertor::voiceChordCloseToMiddleC(chord));
+    _audioProcessor.getSynthEngine().previewChord(theory::NoteConvertor::voiceChordCloseToMiddleC(chord));
 }
 
 void AppLayout::onVoicingSelectorRequested(theory::Degree degree, const std::vector<theory::Chord>& availableVoicings, const std::string& currentSymbol)
@@ -188,6 +211,28 @@ void AppLayout::onVoicingSelectorRequested(theory::Degree degree, const std::vec
         });
 
     updateVoicingSelectorArrow();
+    setVoicingVisibility(true);
+}
+
+void AppLayout::onVoicingSelectorClosed()
+{
+    setVoicingVisibility(false);
+    _openVoicingDegree.reset();
+}
+
+void AppLayout::setVoicingVisibility(bool isVisible)
+{
+    _voicingSelector.setVisible(isVisible);
+    _mainSection.getLayout().setFixedRowHeight(2, isVisible ? 80.f : 0.f);
+
+    // setFixedRowHeight only updates the fixed-height map - it takes effect on the next time
+    // _mainSection's own GridLayout::resized() actually runs. That normally only happens as a
+    // side effect of _mainSection's outer bounds changing (JUCE's Component::setBounds() skips
+    // the resized() callback when the bounds are unchanged), which never happens here since
+    // _mainSection's own size on screen never changes - only one of its internal rows does. Force
+    // it directly rather than relying on the outer resized() cascade below to trigger it.
+    _mainSection.resized();
+    resized();
 }
 
 void AppLayout::updateVoicingSelectorArrow()

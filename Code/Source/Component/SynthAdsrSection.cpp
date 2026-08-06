@@ -27,12 +27,19 @@ SynthAdsrSection::SynthAdsrSection(const std::string& identifier, ndsp::Paramete
     addAndMakeVisible(_sustainDial);
     addAndMakeVisible(_releaseDial);
 
-    _delayDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _attackDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _holdDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _decayDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _sustainDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _releaseDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _delayDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _attackDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _holdDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _decayDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _sustainDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _releaseDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    
+    _delayDial.setLabelGap(8.f);
+    _attackDial.setLabelGap(8.f);
+    _holdDial.setLabelGap(8.f);
+    _decayDial.setLabelGap(8.f);
+    _sustainDial.setLabelGap(8.f);
+    _releaseDial.setLabelGap(8.f);
 
     _envelopeCurve.displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
 
@@ -40,7 +47,7 @@ SynthAdsrSection::SynthAdsrSection(const std::string& identifier, ndsp::Paramete
     setLayoutMargin(kSynthSectionPadding);
     getLayout().setDisplayGrid(false);
     getLayout().init({ 3, 1 }, { 1, 1, 1, 1, 1, 1 });
-    getLayout().setFixedRowHeight(1, 90.f);
+    getLayout().setFixedRowHeight(1, 75.f);
 
     getLayout().addComponent(_envelopeCurve, 0, 0, 6, 1);
     getLayout().addComponent(_delayDial, 1, 0, 1, 1);

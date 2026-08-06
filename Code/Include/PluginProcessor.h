@@ -63,6 +63,13 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    // Runtime checks, not preprocessor ones: JUCE compiles this file once as shared code across
+    // every format in FORMATS (CMakeLists.txt), so e.g. JucePlugin_Build_VST3 is true for all of
+    // them whenever VST3 is among the built formats, regardless of which one actually loads it.
+    [[nodiscard]] bool isVst3() const { return wrapperType == juce::AudioProcessor::wrapperType_VST3; }
+    [[nodiscard]] bool isAudioUnit() const { return wrapperType == juce::AudioProcessor::wrapperType_AudioUnit; }
+    [[nodiscard]] bool isStandalone() const { return wrapperType == juce::AudioProcessor::wrapperType_Standalone; }
+
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout getParameterLayout();
 

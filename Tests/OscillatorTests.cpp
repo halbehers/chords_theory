@@ -5,9 +5,9 @@
 #include <cmath>
 #include <vector>
 
-#include "Audio/Oscillator.h"
+#include <nierika_dsp/nierika_dsp.h>
 
-using audio::Oscillator;
+using ndsp::Oscillator;
 using Catch::Matchers::WithinAbs;
 
 namespace
@@ -280,65 +280,6 @@ TEST_CASE("Oscillator: unison detune spread is symmetric and inactive at 0 cents
     CHECK(std::abs(detunedLast.left - detunedLast.right) > 0.1f);
 }
 
-TEST_CASE("Oscillator: sub-oscillator tracks exactly one octave below the played note by default", "[Oscillator]")
-{
-    Oscillator reference;
-    reference.setSampleRate(kSampleRate);
-    Oscillator::Parameters referenceParams;
-    referenceParams.shape = Oscillator::Shape::Sine;
-    referenceParams.octave = -1; // matches the sub's default -1 octave offset
-    referenceParams.phasePercent = 25.0f;
-    reference.setBlockParameters(referenceParams);
-    reference.noteOn(60);
-
-    Oscillator combined;
-    combined.setSampleRate(kSampleRate);
-    auto combinedParams = referenceParams;
-    combinedParams.subLevelPercent = 100.0f;
-    combinedParams.subOctaveDown2 = false; // -1 octave - same frequency as the main osc above
-    combined.setBlockParameters(combinedParams);
-    combined.noteOn(60);
-
-    // If the sub's frequency exactly matches the main oscillator's own -1-octave setting, both
-    // layers stay perfectly phase-locked (same start phase, same rate) for as long as they're
-    // sampled, so the combined output should be exactly double the main-only reference at every
-    // sample - not just the first one, which distinguishes a genuinely matching ratio from a
-    // coincidental match at a single instant.
-    for (int i = 0; i < 10; ++i)
-    {
-        const auto referenceSample = reference.getNextSample();
-        const auto combinedSample = combined.getNextSample();
-        CHECK_THAT(combinedSample.left, WithinAbs(referenceSample.left * 2.0f, 1.0e-3f));
-    }
-}
-
-TEST_CASE("Oscillator: sub-oscillator's -2 octave toggle halves its frequency again", "[Oscillator]")
-{
-    Oscillator reference;
-    reference.setSampleRate(kSampleRate);
-    Oscillator::Parameters referenceParams;
-    referenceParams.shape = Oscillator::Shape::Sine;
-    referenceParams.octave = -2; // matches subOctaveDown2's -2 octave offset
-    referenceParams.phasePercent = 25.0f;
-    reference.setBlockParameters(referenceParams);
-    reference.noteOn(60);
-
-    Oscillator combined;
-    combined.setSampleRate(kSampleRate);
-    auto combinedParams = referenceParams;
-    combinedParams.subLevelPercent = 100.0f;
-    combinedParams.subOctaveDown2 = true;
-    combined.setBlockParameters(combinedParams);
-    combined.noteOn(60);
-
-    for (int i = 0; i < 10; ++i)
-    {
-        const auto referenceSample = reference.getNextSample();
-        const auto combinedSample = combined.getNextSample();
-        CHECK_THAT(combinedSample.left, WithinAbs(referenceSample.left * 2.0f, 1.0e-3f));
-    }
-}
-
 TEST_CASE("Oscillator: transposeSemitones of +12 is numerically identical to one octave up", "[Oscillator]")
 {
     // 2^(12/12) == 2^1 exactly - transposeSemitones is a separate multiplier term from octave
@@ -392,6 +333,61 @@ TEST_CASE("Oscillator: transposeSemitones stacks on top of octave rather than re
 
     for (int i = 0; i < 10; ++i)
         CHECK_THAT(octavePlusTranspose.getNextSample().left, WithinAbs(twoOctaves.getNextSample().left, 1.0e-3f));
+}
+
+TEST_CASE("Oscillator: doubling tuningReferenceHz doubles frequency, matching one octave up", "[Oscillator]")
+{
+    // getMidiNoteInHertz(note, frequencyOfA) scales linearly with frequencyOfA, so doubling the
+    // reference pitch is mathematically identical to doubling via the (separate) octave
+    // multiplier - a genuine cross-check that tuningReferenceHz reaches the actual frequency
+    // computation, not just a self-consistency check against its own formula.
+    Oscillator viaOctave;
+    viaOctave.setSampleRate(kSampleRate);
+    Oscillator::Parameters octaveParams;
+    octaveParams.shape = Oscillator::Shape::Sine;
+    octaveParams.octave = 1;
+    octaveParams.phasePercent = 25.0f;
+    viaOctave.setBlockParameters(octaveParams);
+    viaOctave.noteOn(60);
+
+    Oscillator viaTuning;
+    viaTuning.setSampleRate(kSampleRate);
+    auto tuningParams = octaveParams;
+    tuningParams.octave = 0;
+    tuningParams.tuningReferenceHz = 880.0f;
+    viaTuning.setBlockParameters(tuningParams);
+    viaTuning.noteOn(60);
+
+    for (int i = 0; i < 10; ++i)
+        CHECK_THAT(viaTuning.getNextSample().left, WithinAbs(viaOctave.getNextSample().left, 1.0e-3f));
+}
+
+TEST_CASE("Oscillator: tuningReferenceHz changes take effect immediately on a held note", "[Oscillator]")
+{
+    // Confirms tuningReferenceHz is re-read every setBlockParameters() call (like Octave/Detune/
+    // Transpose already are), not just snapshotted once at noteOn() - a live knob turn while a
+    // note is held must be audible immediately, not only on the next note-on.
+    Oscillator osc;
+    osc.setSampleRate(kSampleRate);
+    Oscillator::Parameters params;
+    params.shape = Oscillator::Shape::Sine;
+    osc.setBlockParameters(params); // default 440Hz
+    osc.noteOn(60);
+
+    Oscillator reference;
+    reference.setSampleRate(kSampleRate);
+    auto referenceParams = params;
+    referenceParams.tuningReferenceHz = 880.0f;
+    reference.setBlockParameters(referenceParams);
+    reference.noteOn(60);
+
+    // Mid-note, without a fresh noteOn - both still at their initial (unadvanced) phase, so this
+    // exactly matches what `reference` has had since its own noteOn().
+    params.tuningReferenceHz = 880.0f;
+    osc.setBlockParameters(params);
+
+    for (int i = 0; i < 10; ++i)
+        CHECK_THAT(osc.getNextSample().left, WithinAbs(reference.getNextSample().left, 1.0e-3f));
 }
 
 TEST_CASE("Oscillator: phasePercent sets the exact starting phase at noteOn", "[Oscillator]")

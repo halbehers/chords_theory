@@ -18,8 +18,6 @@ ChordSynthEngine::ChordSynthEngine()
 
 void ChordSynthEngine::prepare(double sampleRate, int samplesPerBlock, int numChannels)
 {
-    juce::ignoreUnused(samplesPerBlock);
-
     _sampleRate = sampleRate;
     _synth.setCurrentPlaybackSampleRate(sampleRate);
 
@@ -28,6 +26,10 @@ void ChordSynthEngine::prepare(double sampleRate, int samplesPerBlock, int numCh
     for (int i = 0; i < _synth.getNumVoices(); ++i)
         if (auto* voice = dynamic_cast<SynthVoice*>(_synth.getVoice(i)))
             voice->prepareFilter(sampleRate, numChannels);
+
+    _masterBus.prepare(sampleRate, samplesPerBlock, numChannels);
+    _leftWaveformFifo.prepare(samplesPerBlock);
+    _rightWaveformFifo.prepare(samplesPerBlock);
 }
 
 void ChordSynthEngine::renderNextBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages, int startSample, int numSamples, juce::AudioPlayHead* playHead)
@@ -48,6 +50,25 @@ void ChordSynthEngine::renderNextBlock(juce::AudioBuffer<float>& buffer, juce::M
 
     _keyboardState.processNextMidiBuffer(midiMessages, startSample, numSamples, true);
     _synth.renderNextBlock(buffer, midiMessages, startSample, numSamples);
+
+    // A non-owning view over exactly the [startSample, startSample+numSamples) range that was
+    // just rendered into - the master bus and waveform taps operate on precisely the same range
+    // the voices did, not necessarily the whole buffer (today's only caller always passes the
+    // whole buffer with startSample == 0, but this stays correct even if that ever changes).
+    juce::AudioBuffer<float> outputBlock(buffer.getArrayOfWritePointers(), buffer.getNumChannels(), startSample, numSamples);
+
+    _masterBus.setBlockParameters({
+        .compressorAmountPercent = _masterBusState.compressorAmountPercent.load(std::memory_order_relaxed),
+        .panPercent = _masterBusState.panPercent.load(std::memory_order_relaxed),
+        .outputDb = _masterBusState.outputDb.load(std::memory_order_relaxed),
+    });
+    _masterBus.process(outputBlock);
+
+    if (outputBlock.getNumChannels() > 1)
+    {
+        _leftWaveformFifo.update(outputBlock);
+        _rightWaveformFifo.update(outputBlock);
+    }
 }
 
 void ChordSynthEngine::previewChord(const std::vector<int>& midiNotes)

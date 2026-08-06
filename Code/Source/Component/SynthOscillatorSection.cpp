@@ -33,12 +33,12 @@ SynthOscillatorSection::SynthOscillatorSection(const std::string& identifier, nd
     addAndMakeVisible(_unisonDetuneDial);
     addAndMakeVisible(_unisonStereoDial);
 
-    _octaveDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _detuneDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _transposeDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _unisonVoicesDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _unisonDetuneDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _unisonStereoDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _octaveDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _detuneDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _transposeDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _unisonVoicesDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _unisonDetuneDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _unisonStereoDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
 
     _curve.displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
     _shapeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
@@ -49,13 +49,22 @@ SynthOscillatorSection::SynthOscillatorSection(const std::string& identifier, nd
     _unisonDetuneDial.setAccentColor(nui::Theme::ThemeColor::SECONDARY_ACCENT);
     _unisonStereoDial.setAccentColor(nui::Theme::ThemeColor::SECONDARY_ACCENT);
 
+    _octaveDial.setLabelGap(8.f);
+    _detuneDial.setLabelGap(8.f);
+    _transposeDial.setLabelGap(8.f);
+    _unisonVoicesDial.setLabelGap(8.f);
+    _unisonDetuneDial.setLabelGap(8.f);
+    _unisonStereoDial.setLabelGap(8.f);
+
     _curve.setValueSettersFontSize(nui::Theme::SMALL);
 
     setGap(8.f);
     setLayoutMargin(kSynthSectionPadding);
     getLayout().setDisplayGrid(false);
-    getLayout().init({ 1, 2, 1, 1 }, { 1, 1, 1, 1, 1, 1 });
+    getLayout().init({ 3, 5, 3, 3 }, { 1, 1, 1, 1, 1, 1 });
     getLayout().setFixedRowHeight(0, 28.f);
+    getLayout().setFixedRowHeight(2, 79.f);
+    getLayout().setFixedRowHeight(3, 79.f);
 
     getLayout().addComponent(_shapeCycler, 0, 0, 6, 1);
     getLayout().addComponent(_curve, 1, 0, 6, 1);

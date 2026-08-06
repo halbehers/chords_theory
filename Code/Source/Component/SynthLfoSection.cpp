@@ -31,12 +31,19 @@ SynthLfoSection::SynthLfoSection(const std::string& identifier, ndsp::ParameterM
     addAndMakeVisible(_stereoDial);
     addAndMakeVisible(_depthDial);
 
-    _syncDivisionDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _rateDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _smoothDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _delayDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _stereoDial.setHeightType(nui::Theme::HeightType::LARGE);
-    _depthDial.setHeightType(nui::Theme::HeightType::LARGE);
+    _syncDivisionDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _rateDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _smoothDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _delayDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _stereoDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+    _depthDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
+
+    _syncDivisionDial.setLabelGap(8.f);
+    _rateDial.setLabelGap(8.f);
+    _smoothDial.setLabelGap(8.f);
+    _delayDial.setLabelGap(8.f);
+    _stereoDial.setLabelGap(8.f);
+    _depthDial.setLabelGap(8.f);
 
     _lfoCurve.displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
     _shapeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
@@ -54,8 +61,8 @@ SynthLfoSection::SynthLfoSection(const std::string& identifier, ndsp::ParameterM
     // occupy for the rest of the row.
     getLayout().init({ 1, 3, 1, 1 }, { 1, 2, 2, 2, 2, 2 });
     getLayout().setFixedRowHeight(0, 28.f);
-    getLayout().setFixedRowHeight(2, 45.f);
-    getLayout().setFixedRowHeight(3, 45.f);
+    getLayout().setFixedRowHeight(2, 37.5f);
+    getLayout().setFixedRowHeight(3, 37.5f);
 
     getLayout().addComponent(_shapeCycler, 0, 0, 6, 1);
     getLayout().addComponent(_lfoCurve, 1, 0, 6, 1);

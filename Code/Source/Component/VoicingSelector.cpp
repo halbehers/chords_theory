@@ -16,10 +16,28 @@ VoicingSelector::VoicingSelector(const std::string& identifier):
     addAndMakeVisible(_viewport);
     _viewport.setViewedComponent(&_voicingRow, false); // false: _voicingRow is an owned member, not viewport-owned
     _viewport.setScrollBarsShown(false, true); // horizontal only
+    _viewport.setScrollBarThickness(kScrollbarThickness);
+    // LookAndFeel_V4::drawScrollbar only ever paints the thumb (no track/background), so this is
+    // the only colour that actually shows. juce::Component::findColour defaults to
+    // inheritFromParent=false, and ScrollBar::paint() uses that default - so this has to be set
+    // directly on the actual ScrollBar instance, not on _viewport (which findColour would never
+    // walk up to).
+    _viewport.getHorizontalScrollBar().setColour(juce::ScrollBar::thumbColourId, nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce().withAlpha(0.5f));
+
+    // wantsEventsForAllNestedChildComponents=true: lets mouseEnter/mouseExit below track hovering
+    // over the panel as a whole (including its buttons/viewport/close button), not just bare space.
+    addMouseListener(this, true);
+
+    // A global listener (rather than relying on the local one above) is what lets mouseDown below
+    // actually see clicks on sibling components elsewhere in the app - the local listener can only
+    // ever report events within this component's own subtree, never a click on, say, a ChordCard.
+    juce::Desktop::getInstance().addGlobalMouseListener(this);
 }
 
 VoicingSelector::~VoicingSelector()
 {
+    juce::Desktop::getInstance().removeGlobalMouseListener(this);
+
     _closeButton.removeListener(this);
 
     for (auto& button : _buttons)
@@ -32,11 +50,8 @@ void VoicingSelector::paint(juce::Graphics& g)
 
     const auto bodyBounds = getLocalBounds().withTrimmedTop(kTriangleHeight).toFloat();
 
-    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::SECONDARY_BACKGROUND).asJuce());
-    g.fillRoundedRectangle(bodyBounds, nui::Theme::getBorderRadius());
-
-    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::BORDER).asJuce());
-    g.drawRoundedRectangle(bodyBounds, nui::Theme::getBorderRadius(), 1.f);
+    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce().withAlpha(.2f));
+    g.fillRoundedRectangle(bodyBounds, 0.f);
 
     const auto apexX = static_cast<float>(juce::jlimit(kTriangleHalfWidth, getWidth() - kTriangleHalfWidth, _arrowTargetX));
 
@@ -62,6 +77,36 @@ void VoicingSelector::resized()
     layoutVoicingRow();
 }
 
+void VoicingSelector::mouseEnter(const juce::MouseEvent&)
+{
+    _isHovering = true;
+    updateScrollBarVisibility();
+}
+
+void VoicingSelector::mouseExit(const juce::MouseEvent& event)
+{
+    // addMouseListener(this, true) means this also fires for every child's own boundary crossings
+    // (e.g. moving from one voicing button to its neighbour) - only treat it as a real "left the
+    // whole panel" exit if the pointer has actually left this component's own bounds.
+    if (getLocalBounds().contains(event.getEventRelativeTo(this).getPosition()))
+        return;
+
+    _isHovering = false;
+    updateScrollBarVisibility();
+}
+
+void VoicingSelector::mouseDown(const juce::MouseEvent& event)
+{
+    // Delivered for every mouseDown in the app (see the global listener registered in the
+    // constructor) - a click landing inside this panel or one of its children (the close button,
+    // a voicing button) is handled by that component's own click handler, not this; only a press
+    // that lands genuinely outside dismisses the panel.
+    if (!isVisible() || getScreenBounds().contains(event.getScreenPosition()))
+        return;
+
+    close();
+}
+
 void VoicingSelector::show(const std::vector<theory::Chord>& voicings, const std::string& currentSymbol, OnVoicingChosen onChosen)
 {
     for (auto& button : _buttons)
@@ -76,6 +121,11 @@ void VoicingSelector::show(const std::vector<theory::Chord>& voicings, const std
     {
         auto button = std::make_unique<nelement::TextButton>(chord.symbol, chord.readableName);
         button->setIsSelected(chord.symbol == _currentSymbol);
+        button->setEnabled(chord.symbol != _currentSymbol);
+        button->setBackgroundColour(juce::Colours::transparentBlack);
+        button->setSelectedBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce().withAlpha(.4f));
+        button->setHoverBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce().withAlpha(.2f));
+        button->setFontSize(nui::Theme::PARAGRAPH);
         button->setHeightType(nui::Theme::HeightType::THIN);
         button->addOnClickListener(this);
 
@@ -91,13 +141,29 @@ void VoicingSelector::show(const std::vector<theory::Chord>& voicings, const std
 
 void VoicingSelector::close()
 {
+    if (!isVisible())
+        return;
+
     setVisible(false);
+
+    for (auto* listener : _listeners)
+        listener->onVoicingSelectorClosed();
 }
 
 void VoicingSelector::setArrowTargetX(int arrowTargetX)
 {
     _arrowTargetX = arrowTargetX;
     repaint();
+}
+
+void VoicingSelector::addListener(Listener* listener)
+{
+    _listeners.push_back(listener);
+}
+
+void VoicingSelector::removeListener(Listener* listener)
+{
+    _listeners.erase(std::remove(_listeners.begin(), _listeners.end(), listener), _listeners.end());
 }
 
 void VoicingSelector::onButtonClick(const std::string& componentID)
@@ -126,36 +192,49 @@ void VoicingSelector::refreshSelectedStates()
     for (std::size_t i = 0; i < _voicings.size(); ++i)
     {
         _buttons[i]->setIsSelected(_voicings[i].symbol == _currentSymbol);
+        _buttons[i]->setEnabled(_voicings[i].symbol != _currentSymbol);
         _buttons[i]->repaint();
     }
 }
 
 void VoicingSelector::layoutVoicingRow()
 {
-    // Deliberately not using _viewport.getMaximumVisibleHeight() here: it only subtracts the
-    // scrollbar's thickness once a horizontal scrollbar is already showing, which depends on
-    // _voicingRow's width - the very thing this method is about to set. On the first show() call
-    // for a new (still empty/zero-width) row, that makes it return the viewport's full height,
-    // one call too early. Reserving fixed space against the viewport's own bounds instead sizes
-    // the row correctly on every call, regardless of the scrollbar's current visibility.
-    const auto rowHeight = juce::jmax(0, _viewport.getHeight() - kScrollbarThickness - kScrollbarGap);
+    // Full viewport height, not reduced for the scrollbar - each TextButton already vertically
+    // centres its own themed-height pill within whatever bounds it's given (see
+    // TextButton::resized()'s withSizeKeepingCentre), so handing it the full height centres the
+    // whole button row for free. The native horizontal scrollbar (see constructor) only reserves
+    // its own thin strip at the very bottom edge when actually shown, rather than shrinking this.
+    const auto rowHeight = _viewport.getHeight();
+    const auto viewportWidth = _viewport.getWidth();
     const auto numVoicings = static_cast<int>(_buttons.size());
 
     if (numVoicings == 0)
     {
-        _voicingRow.setSize(0, rowHeight);
+        _voicingRow.setSize(viewportWidth, rowHeight);
         return;
     }
 
-    const auto rowWidth = numVoicings * kButtonWidth + (numVoicings - 1) * kButtonGap;
-    _voicingRow.setSize(rowWidth, rowHeight);
+    const auto naturalRowWidth = numVoicings * kButtonWidth + (numVoicings - 1) * kButtonGap;
+    // At least the full viewport width, so a short row that fits has room to be centred in rather
+    // than sitting flush left with the viewport's own leftover space to its right.
+    _voicingRow.setSize(juce::jmax(naturalRowWidth, viewportWidth), rowHeight);
 
-    auto x = 0;
+    // Centres the whole strip when it fits within the viewport; otherwise starts flush left so it
+    // scrolls normally rather than starting part-way through an off-centre strip.
+    auto x = naturalRowWidth < viewportWidth ? (viewportWidth - naturalRowWidth) / 2 : 0;
     for (auto& button : _buttons)
     {
         button->setBounds(x, 0, kButtonWidth, rowHeight);
         x += kButtonWidth + kButtonGap;
     }
+
+    updateScrollBarVisibility();
+}
+
+void VoicingSelector::updateScrollBarVisibility()
+{
+    const bool needsScrolling = _voicingRow.getWidth() > _viewport.getWidth();
+    _viewport.getHorizontalScrollBar().setVisible(needsScrolling && _isHovering);
 }
 
 }

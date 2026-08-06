@@ -30,7 +30,7 @@ PluginAudioProcessor::PluginAudioProcessor()
                     { nui::Theme::SECONDARY_ACCENT, juce::Colour(0xFFE19EA9) },
                     { nui::Theme::BACKGROUND, juce::Colour(0xFF222122) },
                     { nui::Theme::SECONDARY_BACKGROUND, juce::Colour(0xFF333233) },
-                    { nui::Theme::BORDER, juce::Colour(0xFF303030) },
+                    { nui::Theme::BORDER, juce::Colour(0xFF505050) },
                 }
             },
             {

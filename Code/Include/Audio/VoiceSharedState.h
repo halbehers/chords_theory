@@ -7,7 +7,7 @@
 namespace audio
 {
 
-// One oscillator's worth of atomics, matching audio::Oscillator::Parameters field-for-field - see
+// One oscillator's worth of atomics, matching ndsp::Oscillator::Parameters field-for-field - see
 // SynthVoice::readOscillatorParameters() for the int/bool-to-Oscillator::Parameters mapping.
 // shape: 0=Sine,1=Triangle,2=Saw,3=Square, same vocabulary as VoiceSharedState::lfoShape below.
 // Every field here follows VoiceSharedState's own cross-thread/read-cadence contract (see its doc
@@ -29,10 +29,34 @@ struct OscillatorState
     std::atomic<int> unisonVoices { 1 };
     std::atomic<float> unisonDetuneCents { 0.0f };
     std::atomic<float> unisonStereoPercent { 0.0f };
-    std::atomic<float> subLevelPercent { 0.0f };
-    std::atomic<bool> subOctaveDown2 { false };
     std::atomic<float> phasePercent { 0.0f };
     std::atomic<bool> phaseRandomizeEnabled { false };
+};
+
+// The dedicated sub-oscillator layer (see SynthSubSection) - a single, voice-wide instance rather
+// than one per main oscillator (unlike OscillatorState above). Matches ndsp::SubOscillator::
+// Parameters field-for-field - see SynthVoice::readSubOscillatorParameters().
+struct SubOscillatorState
+{
+    std::atomic<bool> enabled { false };
+    std::atomic<int> octave { -1 };
+    std::atomic<int> transposeSemitones { 0 };
+    std::atomic<float> tonePercent { 0.0f };
+    std::atomic<float> outputDb { 0.0f }; // unity - `enabled` already handles silence-by-default
+};
+
+// How oscillator1 and oscillator2 combine (see SynthMixerSection/Parameters::MIXER_ALGORITHM_ID).
+// algorithmIndex: 0=Add,1=FM,2=RingMod,3=AM,4=SerialFold - matches the mixer-algorithm
+// AudioParameterChoice's order exactly, and indexes SynthVoice's own fixed algorithm array. Each
+// parameterized algorithm gets its own independent amount, not one shared/reinterpreted value, so
+// switching algorithms never makes a previously-automated value suddenly mean something else.
+struct MixerState
+{
+    std::atomic<int> algorithmIndex { 0 };
+    std::atomic<float> fmAmountPercent { 0.0f };
+    std::atomic<float> ringModMixPercent { 0.0f };
+    std::atomic<float> amDepthPercent { 0.0f };
+    std::atomic<float> serialFoldAmountPercent { 0.0f };
 };
 
 // Owned by ChordSynthEngine, referenced by every SynthVoice. Every field is std::atomic
@@ -56,6 +80,13 @@ struct VoiceSharedState
 
     OscillatorState oscillator1;
     OscillatorState oscillator2 { .outputDb = kOscillator2DefaultOutputDb };
+    SubOscillatorState subOscillator;
+    MixerState mixer;
+
+    // Global reference pitch (concert A4), read identically by every oscillator across every voice
+    // (see SynthOutputSection) - not nested in Oscillator/Sub/Mixer state since it isn't specific
+    // to any one of them.
+    std::atomic<float> tuningReferenceHz { 440.0f };
 
     std::atomic<float> envelopeDelayMs { 0.0f };
     std::atomic<float> envelopeAttackMs { 5.0f };

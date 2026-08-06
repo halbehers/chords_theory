@@ -23,13 +23,13 @@ ChordCard::ChordCard(const std::string& identifier, theory::Degree degree):
     _degreeLabel.setJustificationType(juce::Justification::centred);
     _degreeLabel.setInterceptsMouseClicks(false, false); // decorative - clicks must reach the card
 
-    _chordNameLabel.setFontSize(nui::Theme::HEADING);
+    _chordNameLabel.setFontSize(nui::Theme::LABEL);
     _chordNameLabel.setFontWeight(nui::Theme::FontWeight::MEDIUM);
     _chordNameLabel.setJustificationType(juce::Justification::centred);
     _chordNameLabel.setInterceptsMouseClicks(false, false); // decorative - clicks must reach the card
 
-    displayBorder(nui::Theme::ThemeColor::BORDER, 1.f, nui::Theme::getBorderRadius());
-    displayBackground(nui::Theme::ThemeColor::SECONDARY_BACKGROUND, nui::Theme::getBorderRadius());
+    displayBorder(nui::Theme::ThemeColor::ACCENT, 1.f, nui::Theme::getBorderRadius());
+    displayBackground(nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce().withAlpha(.2f), nui::Theme::getBorderRadius());
 
     setTooltip(juce::translate("chord_card_tooltip").toStdString());
     setTooltipEnabled(true);
@@ -39,6 +39,8 @@ ChordCard::ChordCard(const std::string& identifier, theory::Degree degree):
     _layout.init({ 1, 2 }, { 1 });
     _layout.addComponent(_degreeLabel, 0, 0, 1, 1);
     _layout.addComponent(_chordNameLabel, 1, 0, 1, 1);
+
+    setPadding(4.f);
 
     nui::Theme::getChangeBroadcaster().addChangeListener(this);
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);

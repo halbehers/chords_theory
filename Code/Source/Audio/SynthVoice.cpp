@@ -15,6 +15,13 @@ namespace
 SynthVoice::SynthVoice(VoiceSharedState& sharedState):
     _sharedState(sharedState)
 {
+    // Constructed once, here, so switching algorithms live never allocates on the audio thread.
+    // Order matches Parameters::registerMixerParameters' AudioParameterChoice exactly.
+    _algorithms[0] = std::make_unique<ndsp::AddAlgorithm>();
+    _algorithms[1] = std::make_unique<ndsp::FmAlgorithm>();
+    _algorithms[2] = std::make_unique<ndsp::RingModulationAlgorithm>();
+    _algorithms[3] = std::make_unique<ndsp::AmplitudeModulationAlgorithm>();
+    _algorithms[4] = std::make_unique<ndsp::SerialFoldAlgorithm>();
 }
 
 bool SynthVoice::canPlaySound(juce::SynthesiserSound* sound)
@@ -38,6 +45,8 @@ void SynthVoice::startNote(int midiNoteNumber, float velocity, juce::Synthesiser
     _oscillator1.setBlockParameters(readOscillatorParameters(_sharedState.oscillator1));
     _oscillator2.noteOn(midiNoteNumber);
     _oscillator2.setBlockParameters(readOscillatorParameters(_sharedState.oscillator2));
+    _subOscillator.noteOn(midiNoteNumber);
+    _subOscillator.setBlockParameters(readSubOscillatorParameters());
 
     _lfo.noteOn();
 }
@@ -75,6 +84,8 @@ void SynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int sta
     _lfo.setParameters(readLfoParameters(), _sharedState.hostBpm, _sharedState.freeLfoPhase01);
     _oscillator1.setBlockParameters(readOscillatorParameters(_sharedState.oscillator1));
     _oscillator2.setBlockParameters(readOscillatorParameters(_sharedState.oscillator2));
+    _subOscillator.setBlockParameters(readSubOscillatorParameters());
+    updateMixerBlockParameters();
 
     const auto numChannels = outputBuffer.getNumChannels();
 
@@ -82,13 +93,10 @@ void SynthVoice::renderNextBlock(juce::AudioBuffer<float>& outputBuffer, int sta
     {
         const auto envelopeValue = _envelope.getNextSample();
 
-        const auto osc1Sample = _oscillator1.getNextSample();
-        const auto osc2Sample = _oscillator2.getNextSample();
-        // Simple addition for now - this is the single point a future combine-mode parameter
-        // (parallel/serial/FM/...) would change; deliberately not abstracted further until that
-        // parameter actually exists.
-        const auto dryLeft = (osc1Sample.left + osc2Sample.left) * envelopeValue * kVoiceGain;
-        const auto dryRight = (osc1Sample.right + osc2Sample.right) * envelopeValue * kVoiceGain;
+        const auto combinedSample = _algorithms[static_cast<std::size_t>(_currentAlgorithmIndex)]->getNextSample(_oscillator1, _oscillator2);
+        const auto subSample = _subOscillator.getNextSample();
+        const auto dryLeft = (combinedSample.left + subSample) * envelopeValue * kVoiceGain;
+        const auto dryRight = (combinedSample.right + subSample) * envelopeValue * kVoiceGain;
 
         const auto lfoValue = _lfo.getNextSample();
         const auto filtered = _filter.processSample(dryLeft, dryRight, lfoValue.left, lfoValue.right);
@@ -122,6 +130,8 @@ void SynthVoice::setCurrentPlaybackSampleRate(double newRate)
         _oscillator1.setBlockParameters(readOscillatorParameters(_sharedState.oscillator1));
         _oscillator2.setSampleRate(newRate);
         _oscillator2.setBlockParameters(readOscillatorParameters(_sharedState.oscillator2));
+        _subOscillator.setSampleRate(newRate);
+        _subOscillator.setBlockParameters(readSubOscillatorParameters());
     }
 }
 
@@ -130,16 +140,16 @@ void SynthVoice::prepareFilter(double sampleRate, int numChannels)
     _filter.prepare(sampleRate, numChannels);
 }
 
-Oscillator::Parameters SynthVoice::readOscillatorParameters(const OscillatorState& state) const
+ndsp::Oscillator::Parameters SynthVoice::readOscillatorParameters(const OscillatorState& state) const
 {
     const auto shapeIndex = state.shape.load(std::memory_order_relaxed);
 
-    Oscillator::Parameters parameters;
+    ndsp::Oscillator::Parameters parameters;
     parameters.enabled = state.enabled.load(std::memory_order_relaxed);
-    parameters.shape = shapeIndex == 1 ? Oscillator::Shape::Triangle
-                      : shapeIndex == 2 ? Oscillator::Shape::Saw
-                      : shapeIndex == 3 ? Oscillator::Shape::Square
-                      : Oscillator::Shape::Sine;
+    parameters.shape = shapeIndex == 1 ? ndsp::Oscillator::Shape::Triangle
+                      : shapeIndex == 2 ? ndsp::Oscillator::Shape::Saw
+                      : shapeIndex == 3 ? ndsp::Oscillator::Shape::Square
+                      : ndsp::Oscillator::Shape::Sine;
     parameters.shapeNoisePercent = state.shapeNoisePercent.load(std::memory_order_relaxed);
     parameters.octave = state.octave.load(std::memory_order_relaxed);
     parameters.transposeSemitones = state.transposeSemitones.load(std::memory_order_relaxed);
@@ -150,12 +160,41 @@ Oscillator::Parameters SynthVoice::readOscillatorParameters(const OscillatorStat
     parameters.unisonVoices = state.unisonVoices.load(std::memory_order_relaxed);
     parameters.unisonDetuneCents = state.unisonDetuneCents.load(std::memory_order_relaxed);
     parameters.unisonStereoPercent = state.unisonStereoPercent.load(std::memory_order_relaxed);
-    parameters.subLevelPercent = state.subLevelPercent.load(std::memory_order_relaxed);
-    parameters.subOctaveDown2 = state.subOctaveDown2.load(std::memory_order_relaxed);
     parameters.phasePercent = state.phasePercent.load(std::memory_order_relaxed);
     parameters.phaseRandomizeEnabled = state.phaseRandomizeEnabled.load(std::memory_order_relaxed);
+    parameters.tuningReferenceHz = _sharedState.tuningReferenceHz.load(std::memory_order_relaxed);
 
     return parameters;
+}
+
+ndsp::SubOscillator::Parameters SynthVoice::readSubOscillatorParameters() const
+{
+    const auto& state = _sharedState.subOscillator;
+
+    ndsp::SubOscillator::Parameters parameters;
+    parameters.enabled = state.enabled.load(std::memory_order_relaxed);
+    parameters.octave = state.octave.load(std::memory_order_relaxed);
+    parameters.transposeSemitones = state.transposeSemitones.load(std::memory_order_relaxed);
+    parameters.tonePercent = state.tonePercent.load(std::memory_order_relaxed);
+    parameters.outputDb = state.outputDb.load(std::memory_order_relaxed);
+    parameters.tuningReferenceHz = _sharedState.tuningReferenceHz.load(std::memory_order_relaxed);
+
+    return parameters;
+}
+
+void SynthVoice::updateMixerBlockParameters()
+{
+    const auto& mixer = _sharedState.mixer;
+
+    _currentAlgorithmIndex = juce::jlimit(0, static_cast<int>(_algorithms.size()) - 1, mixer.algorithmIndex.load(std::memory_order_relaxed));
+
+    const auto amountPercent = _currentAlgorithmIndex == 1 ? mixer.fmAmountPercent.load(std::memory_order_relaxed)
+                              : _currentAlgorithmIndex == 2 ? mixer.ringModMixPercent.load(std::memory_order_relaxed)
+                              : _currentAlgorithmIndex == 3 ? mixer.amDepthPercent.load(std::memory_order_relaxed)
+                              : _currentAlgorithmIndex == 4 ? mixer.serialFoldAmountPercent.load(std::memory_order_relaxed)
+                              : 0.0f;
+
+    _algorithms[static_cast<std::size_t>(_currentAlgorithmIndex)]->setBlockParameters(amountPercent / 100.0f);
 }
 
 DahdsrEnvelope::Parameters SynthVoice::readEnvelopeParameters() const

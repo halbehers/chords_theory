@@ -4,7 +4,10 @@
 
 #include <juce_audio_basics/juce_audio_basics.h> // includes juce::AudioPlayHead
 #include <juce_events/juce_events.h>
+#include <nierika_dsp/nierika_dsp.h>
 
+#include "Audio/MasterBus.h"
+#include "Audio/MasterBusState.h"
 #include "Audio/VoiceSharedState.h"
 
 namespace audio
@@ -42,6 +45,18 @@ public:
     // see VoiceSharedState's own doc comment for the cross-thread contract.
     [[nodiscard]] VoiceSharedState& getSharedState() { return _sharedState; }
 
+    // Written from Parameters.cpp's onChange callbacks, read once per block by _masterBus - see
+    // MasterBusState's own doc comment for why this is separate from VoiceSharedState.
+    [[nodiscard]] MasterBusState& getMasterBusState() { return _masterBusState; }
+
+    // Fed from the master output (post-MasterBus, the plugin's actual final audio) at the end of
+    // every renderNextBlock - SynthOutputSection's CircularStereoWaveform reads these on the
+    // message thread. Owned here (not on PluginAudioProcessor) so AppLayout's existing
+    // ChordSynthEngine& reference is already enough to reach them, with no change needed to
+    // AppLayout's/PluginEditor's own construction signatures.
+    [[nodiscard]] ndsp::SingleChannelSampleFIFO<juce::AudioBuffer<float>>& getLeftWaveformFifo() { return _leftWaveformFifo; }
+    [[nodiscard]] ndsp::SingleChannelSampleFIFO<juce::AudioBuffer<float>>& getRightWaveformFifo() { return _rightWaveformFifo; }
+
 private:
     void timerCallback() override;
     void releaseActiveNotes();
@@ -63,6 +78,11 @@ private:
     juce::MidiKeyboardState _keyboardState;
     std::vector<int> _activeNotes;
     double _sampleRate = 44100.0;
+
+    MasterBusState _masterBusState;
+    MasterBus _masterBus;
+    ndsp::SingleChannelSampleFIFO<juce::AudioBuffer<float>> _leftWaveformFifo { ndsp::Channel::LEFT };
+    ndsp::SingleChannelSampleFIFO<juce::AudioBuffer<float>> _rightWaveformFifo { ndsp::Channel::RIGHT };
 };
 
 }

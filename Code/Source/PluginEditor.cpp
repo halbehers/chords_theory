@@ -3,7 +3,7 @@
 
 PluginAudioProcessorEditor::PluginAudioProcessorEditor(PluginAudioProcessor& p):
     AudioProcessorEditor(&p),
-    _layout(p, p.getSynthEngine())
+    _layout(p, p)
 {
     addAndMakeVisible(_layout, 10);
 
