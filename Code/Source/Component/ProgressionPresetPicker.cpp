@@ -12,6 +12,7 @@ ProgressionPresetPicker::ProgressionPresetPicker(const std::string& identifier):
 {
     _picker.addOnValueChangedListener(this);
     _picker.setHeightType(nui::Theme::HeightType::THIN);
+    _picker.setTextWhenNothingSelected(juce::translate("progression_preset_picker_placeholder"));
 
     _layout.setDisplayGrid(false);
     _layout.init({ 1 }, { 1 });

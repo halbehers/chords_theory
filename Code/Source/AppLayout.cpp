@@ -31,6 +31,7 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _progressionSequencer.setScale(_keyScaleSelector.getScale());
 
     _voicingSelector.addListener(this);
+    _voicingSelector.setDismissExemptComponent(&_chordBrowser);
 
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
 
@@ -48,7 +49,7 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _mainSection.addPanel("synth-tab", juce::translate("synth_tab_label").toStdString());
 
     _mainSection.getLayout().setDisplayGrid(false);
-    _mainSection.getLayout().init({ 1, 1, 1, 1 }, { 1, 1, 1, 1, 1, 1, 1, 1, 1 });
+    _mainSection.getLayout().init({ 1, 1, 1, 1, 1 }, { 1, 1, 1, 1, 1, 1, 1, 1, 1 });
 
     _mainSection.getLayout().setFixedColumnWidth(0, 24.f);
     _mainSection.getLayout().setFixedColumnWidth(8, 24.f);
@@ -57,13 +58,14 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _mainSection.getLayout().setFixedColumnWidth(4, 450.f);
     _mainSection.getLayout().setFixedRowHeight(0, 60.f);
     _mainSection.getLayout().setFixedRowHeight(1, 64.f);
-    _mainSection.getLayout().setFixedRowHeight(1, 70.f);
+    _mainSection.getLayout().setFixedRowHeight(2, 70.f);
+    _mainSection.getLayout().setFixedRowHeight(3, 12.f);
 
     _mainSection.getLayout().addComponent(_settings, 0, 1, 1, 1);
     _mainSection.getLayout().addComponent(_keyScaleSelector, 0, 4, 1, 1);
     _mainSection.getLayout().addComponent(_chordBrowser, 1, 3, 3, 1);
     _mainSection.getLayout().addComponent(_voicingSelector, 2, 0, 9, 1);
-    _mainSection.getLayout().addComponent(_progressionSequencer, 3, 1, 7, 1);
+    _mainSection.getLayout().addComponent(_progressionSequencer, 4, 1, 7, 1);
 
     _mainSection.getLayout("synth-tab").setDisplayGrid(false);
     _mainSection.getLayout("synth-tab").init({ 1 }, { 1 });

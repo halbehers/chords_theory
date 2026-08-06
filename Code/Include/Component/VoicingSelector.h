@@ -63,6 +63,12 @@ public:
     void addListener(Listener* listener);
     void removeListener(Listener* listener);
 
+    // A click landing inside this component's own bounds is also exempt from the close-on-outside-
+    // click behaviour (see mouseDown) - e.g. AppLayout registers its chord browser here, so clicking
+    // a chord to preview it or reopen this panel for a different degree doesn't first close it.
+    // Non-owning; nullptr (the default) exempts nothing extra.
+    void setDismissExemptComponent(juce::Component* component) { _dismissExemptComponent = component; }
+
 private:
     void onButtonClick(const std::string& componentID) override;
     void refreshSelectedStates();
@@ -75,7 +81,7 @@ private:
 
     static constexpr int kTriangleHeight = 10;
     static constexpr int kTriangleHalfWidth = 8;
-    static constexpr int kButtonWidth = 70;
+    static constexpr int kButtonWidth = 80;
     static constexpr int kButtonGap = 4;
     static constexpr int kCloseButtonSize = 20;
     static constexpr int kBodyInset = 6;
@@ -96,6 +102,7 @@ private:
     std::vector<std::unique_ptr<nelement::TextButton>> _buttons;
     std::vector<Listener*> _listeners;
     bool _isHovering = false;
+    juce::Component* _dismissExemptComponent = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VoicingSelector)
 };

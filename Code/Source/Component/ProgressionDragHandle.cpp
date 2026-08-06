@@ -20,8 +20,8 @@ ProgressionDragHandle::ProgressionDragHandle(const std::string& identifier):
     _label.setJustificationType(juce::Justification::centred);
     _label.setInterceptsMouseClicks(false, false); // decorative - clicks/drags must reach the handle
 
-    displayBorder(nui::Theme::ThemeColor::BORDER, 1.f, nui::Theme::getBorderRadius());
-    displayBackground(nui::Theme::ThemeColor::SECONDARY_BACKGROUND, nui::Theme::getBorderRadius());
+    displayBorder(nui::Theme::ThemeColor::ACCENT, 1.f, nui::Theme::getBorderRadius());
+    displayBackground(nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce().withAlpha(.2f), nui::Theme::getBorderRadius());
 
     addAndMakeVisible(_label);
 

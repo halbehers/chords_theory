@@ -41,7 +41,9 @@ private:
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     void notifyListeners();
 
+    nelement::Text _keyLabel { "key-scale-selector-key-label" };
     nelement::ComboBox _keyPicker { "key-scale-selector-key-picker" };
+    nelement::Text _scaleLabel { "key-scale-selector-scale-label" };
     nelement::ComboBox _scalePicker { "key-scale-selector-scale-picker" };
 
     theory::Key _currentKey = theory::Key::C;

@@ -31,7 +31,6 @@ class ProgressionSequencer : public nui::Component,
                               public ProgressionSlotView::Listener,
                               public ProgressionPresetPicker::Listener,
                               public ProgressionDragHandle::Listener,
-                              public nelement::TextButton::OnClickListener,
                               public nelement::SVGButton::OnClickListener
 {
 public:
@@ -151,8 +150,9 @@ private:
     ChordResolver _chordResolver;
     theory::Scale _currentScale = theory::Scale::Major;
 
+    nelement::Text _presetsLabel { "progression-presets-label" };
     ProgressionPresetPicker _presetPicker;
-    nelement::TextButton _savePresetButton;
+    nelement::SVGButton _savePresetButton;
 
     juce::Viewport _slotsViewport;
     SlotsRow _slotsRow { *this };

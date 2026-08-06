@@ -12,8 +12,6 @@ namespace component
 namespace
 {
     constexpr float kHeaderRowHeight = 32.f;
-    constexpr float kSlotRowHeight = 56.f;
-    constexpr float kDragHandleRowHeight = 40.f;
 
     constexpr int kMinSlotCount = 1;
     constexpr int kDefaultSlotCount = 4;
@@ -58,21 +56,20 @@ ProgressionSequencer::ProgressionSequencer(const std::string& identifier, ChordR
     Component(identifier),
     _chordResolver(std::move(chordResolver)),
     _presetPicker("progression-preset-picker-wrapper"),
-    _savePresetButton("progression-save-preset-button", juce::translate("progression_save_preset_button").toStdString()),
+    _savePresetButton("progression-save-preset-button", nui::Icons::getPlus()),
     _dragHandle("progression-drag-handle")
 {
     _presetPicker.addListener(this);
 
-    _savePresetButton.setHeightType(nui::Theme::HeightType::THIN);
+    _savePresetButton.setIconSize(16.f);
     _savePresetButton.addOnClickListener(this);
 
     _dragHandle.addListener(this);
 
-    addAndMakeVisible(_presetPicker);
-    addAndMakeVisible(_savePresetButton);
-    addAndMakeVisible(_dragHandle);
+    _presetsLabel.setText(juce::translate("progression_presets_label").toStdString());
+    _presetsLabel.setFontSize(nui::Theme::LABEL);
+    _presetsLabel.setJustificationType(juce::Justification::centredRight);
 
-    addAndMakeVisible(_slotsViewport);
     _slotsViewport.setComponentID("progression-slots-viewport");
     _slotsViewport.setViewedComponent(&_slotsRow, false); // false: _slotsRow is an owned member, not viewport-owned
     _slotsViewport.setScrollBarsShown(false, true); // horizontal only
@@ -87,18 +84,25 @@ ProgressionSequencer::ProgressionSequencer(const std::string& identifier, ChordR
         addStep();
 
     _layout.setGap(8.f);
-    _layout.setDisplayGrid(false);
+    _layout.setDisplayGrid(true);
 
-    _layout.init({ 1, 1, 1 }, { 4, 1 }); // row0: picker | save-button, row1: slots viewport, row2: drag handle
+    _layout.init({ 1, 1, 1 }, { 1, 1, 1, 4, 1, 1, 1 });
+
+    _layout.setFixedColumnWidth(0, 32.f);
+    _layout.setFixedColumnWidth(1, 12.f);
+    _layout.setFixedColumnWidth(2, 150.f);
+    _layout.setFixedColumnWidth(6, 32.f);
+    _layout.setFixedColumnWidth(5, 250.f);
+    _layout.setFixedColumnWidth(4, 175.f);
 
     _layout.setFixedRowHeight(0, kHeaderRowHeight);
-    _layout.setFixedRowHeight(1, kSlotRowHeight);
-    _layout.setFixedRowHeight(2, kDragHandleRowHeight);
+    _layout.setFixedRowHeight(1, 12.f);
 
-    _layout.addComponent(_presetPicker, 0, 0, 1, 1);
-    _layout.addComponent(_savePresetButton, 0, 1, 1, 1);
-    _layout.addComponent("progression-slots-viewport", _slotsViewport, 1, 0, 2, 1); // explicit-identifier overload - juce::Viewport isn't a nui::Component
-    _layout.addComponent(_dragHandle, 2, 0, 2, 1);
+    _layout.addComponent(_dragHandle, 0, 2, 1, 1);
+    _layout.addComponent(_presetsLabel, 0, 4, 1, 1);
+    _layout.addComponent(_presetPicker, 0, 5, 1, 1);
+    _layout.addComponent(_savePresetButton, 0, 6, 1, 1);
+    // _layout.addComponent("progression-slots-viewport", _slotsViewport, 2, 0, 7, 1);
 }
 
 ProgressionSequencer::~ProgressionSequencer()

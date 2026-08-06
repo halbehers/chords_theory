@@ -25,13 +25,22 @@ KeyScaleSelector::KeyScaleSelector(const std::string& identifier):
     _keyPicker.setHeightType(nui::Theme::HeightType::THIN);
     _scalePicker.setHeightType(nui::Theme::HeightType::THIN);
 
+    _keyLabel.setText(juce::translate("key_scale_selector_key_label").toStdString());
+    _scaleLabel.setText(juce::translate("key_scale_selector_scale_label").toStdString());
+    _keyLabel.setFontSize(nui::Theme::LABEL);
+    _scaleLabel.setFontSize(nui::Theme::LABEL);
+    _keyLabel.setJustificationType(juce::Justification::centredRight);
+    _scaleLabel.setJustificationType(juce::Justification::centredRight);
+
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
 
     _layout.setGap(8.f);
     _layout.setDisplayGrid(false);
-    _layout.init({ 1 }, { 1, 1 });
-    _layout.addComponent(_keyPicker, 0, 0, 1, 1);
-    _layout.addComponent(_scalePicker, 0, 1, 1, 1);
+    _layout.init({ 1 }, { 1, 3, 1, 3 });
+    _layout.addComponent(_keyLabel, 0, 0, 1, 1);
+    _layout.addComponent(_keyPicker, 0, 1, 1, 1);
+    _layout.addComponent(_scaleLabel, 0, 2, 1, 1);
+    _layout.addComponent(_scalePicker, 0, 3, 1, 1);
 }
 
 KeyScaleSelector::~KeyScaleSelector()
@@ -103,6 +112,9 @@ void KeyScaleSelector::changeListenerCallback(juce::ChangeBroadcaster* source)
     for (int i = 0; i < theory::kNumScales; ++i)
         _scalePicker.addItem(juce::translate(theory::getScaleTranslationKey(static_cast<theory::Scale>(i))), i + 1);
     _scalePicker.setSelectedId(static_cast<int>(selectedScale) + 1, juce::dontSendNotification);
+
+    _keyLabel.setText(juce::translate("key_scale_selector_key_label").toStdString());
+    _scaleLabel.setText(juce::translate("key_scale_selector_scale_label").toStdString());
 
     repaint();
 }
