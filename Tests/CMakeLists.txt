@@ -9,9 +9,8 @@ add_executable(${PROJECT_NAME}_Tests
         ChordDegreeBrowserTests.cpp
         ChordSynthEngineTests.cpp
         ChordCardTests.cpp
-        ProgressionSlotViewTests.cpp
         VoicingSelectorTests.cpp
-        ProgressionSequencerTests.cpp
+        ProgressionEditorTests.cpp
         ProgressionPresetIntegrationTests.cpp
         ProgressionDragHandleTests.cpp
         DahdsrEnvelopeTests.cpp
@@ -21,6 +20,7 @@ add_executable(${PROJECT_NAME}_Tests
         SubOscillatorTests.cpp
         SynthAlgorithmTests.cpp
         MasterCompressorTests.cpp
+        MidiEditorTests.cpp
         SectionPanelChangeTests.cpp
         main.cpp
 )

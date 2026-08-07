@@ -13,7 +13,7 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _settings("settings", nui::Icons::getGear()),
     _keyScaleSelector("key-scale-selector"),
     _chordBrowser("chord-degree-browser"),
-    _progressionSequencer("progression-sequencer", [this](const theory::ProgressionSlot& slot) { return _chordBrowser.resolveSlot(slot); }),
+    _progressionEditor("progression-sequencer", [this](const theory::ProgressionSlot& slot) { return _chordBrowser.resolveSlot(slot); }),
     _synthEditor(parameterManager, &audioProcessor.getSynthEngine().getLeftWaveformFifo(), &audioProcessor.getSynthEngine().getRightWaveformFifo()),
     _mainSection("main-section", parameterManager),
     _windowsManager(*this)
@@ -27,8 +27,8 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _chordBrowser.addListener(this);
     _chordBrowser.setKeyAndScale(_keyScaleSelector.getKey(), _keyScaleSelector.getScale());
 
-    _progressionSequencer.addListener(this);
-    _progressionSequencer.setScale(_keyScaleSelector.getScale());
+    _progressionEditor.addListener(this);
+    _progressionEditor.setScale(_keyScaleSelector.getScale());
 
     _voicingSelector.addListener(this);
     _voicingSelector.setDismissExemptComponent(&_chordBrowser);
@@ -65,7 +65,7 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _mainSection.getLayout().addComponent(_keyScaleSelector, 0, 4, 1, 1);
     _mainSection.getLayout().addComponent(_chordBrowser, 1, 3, 3, 1);
     _mainSection.getLayout().addComponent(_voicingSelector, 2, 0, 9, 1);
-    _mainSection.getLayout().addComponent(_progressionSequencer, 4, 1, 7, 1);
+    _mainSection.getLayout().addComponent(_progressionEditor, 4, 1, 7, 1);
 
     _mainSection.getLayout("synth-tab").setDisplayGrid(false);
     _mainSection.getLayout("synth-tab").init({ 1 }, { 1 });
@@ -111,7 +111,7 @@ AppLayout::~AppLayout()
     _settings.removeListener(this);
     _keyScaleSelector.removeListener(this);
     _chordBrowser.removeListener(this);
-    _progressionSequencer.removeListener(this);
+    _progressionEditor.removeListener(this);
     _voicingSelector.removeListener(this);
 }
 
@@ -163,7 +163,7 @@ void AppLayout::onKeyScaleChanged(theory::Key key, theory::Scale scale)
     _voicingSelector.close();
 
     _chordBrowser.setKeyAndScale(key, scale);
-    _progressionSequencer.setScale(scale);
+    _progressionEditor.setScale(scale);
 
     syncStateToValueTree();
 }
@@ -188,11 +188,6 @@ void AppLayout::onChordPreviewRequested(theory::Degree degree, const theory::Cho
 {
     juce::ignoreUnused(degree);
 
-    previewChord(chord);
-}
-
-void AppLayout::onChordPreviewRequested(const theory::Chord& chord)
-{
     previewChord(chord);
 }
 
@@ -246,19 +241,21 @@ void AppLayout::updateVoicingSelectorArrow()
         _voicingSelector.setArrowTargetX(_voicingSelector.getLocalPoint(card, card->getLocalBounds().getCentre()).x);
 }
 
-void AppLayout::onSlotFileDropped(int slotIndex, const juce::String& filePath)
+void AppLayout::onChordFileDropped(double startBeat, const juce::String& filePath)
 {
     const auto it = _inFlightChordDrags.find(filePath);
     if (it == _inFlightChordDrags.end())
         return;
 
-    _progressionSequencer.setSlotDegree(slotIndex, it->second);
+    if (const auto* chord = _chordBrowser.resolveSlot(theory::ProgressionSlot { it->second, 0 }))
+        _progressionEditor.addChordAtBeat(startBeat, *chord);
+
     _inFlightChordDrags.erase(it);
 }
 
 void AppLayout::onProgressionDragStarted()
 {
-    const auto populatedSlots = _progressionSequencer.getPopulatedSlots();
+    const auto populatedSlots = _progressionEditor.getPopulatedSlots();
     if (populatedSlots.empty())
         return;
 
@@ -300,9 +297,9 @@ void AppLayout::syncStateToValueTree()
             state.degreeVoicings.emplace_back(degreeData.degree, chord->symbol);
     }
 
-    for (int i = 0; i < _progressionSequencer.getSlotCount(); ++i)
+    for (int i = 0; i < _progressionEditor.getSlotCount(); ++i)
     {
-        if (const auto degree = _progressionSequencer.getSlotDegree(i))
+        if (const auto degree = _progressionEditor.getSlotDegree(i))
             state.progressionSlots.emplace_back(i, *degree);
     }
 
@@ -321,11 +318,11 @@ void AppLayout::restoreStateFromValueTree()
 
     _keyScaleSelector.setKeyAndScale(state.key, state.scale);
     _chordBrowser.setKeyAndScale(state.key, state.scale);
-    _progressionSequencer.setScale(state.scale);
+    _progressionEditor.setScale(state.scale);
 
     for (const auto& [degree, chordSymbol] : state.degreeVoicings)
         _chordBrowser.setDegreeVoicing(degree, chordSymbol);
 
     for (const auto& [index, degree] : state.progressionSlots)
-        _progressionSequencer.setSlotDegree(index, degree);
+        _progressionEditor.setSlotDegree(index, degree);
 }

@@ -1,13 +1,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include "Component/ChordDegreeBrowser.h"
-#include "Component/ProgressionSequencer.h"
+#include "Component/ProgressionEditor.h"
 #include "Theory/ChordDatabase.h"
 #include "Theory/ProgressionPresetFactory.h"
 #include "Theory/ProgressionPresetLibrary.h"
 
 using component::ChordDegreeBrowser;
-using component::ProgressionSequencer;
+using component::ProgressionEditor;
 using theory::ChordDatabase;
 using theory::Degree;
 using theory::Key;
@@ -20,7 +20,7 @@ TEST_CASE("INTEGRATION: end-to-end, exactly as AppLayout wires it - pick non-def
     ChordDegreeBrowser browser("test-browser");
     browser.setKeyAndScale(Key::C, Scale::Major);
 
-    ProgressionSequencer sequencer("test-sequencer",
+    ProgressionEditor sequencer("test-sequencer",
         [&browser](const theory::ProgressionSlot& slot) { return browser.resolveSlot(slot); });
     sequencer.setScale(Scale::Major);
 
@@ -35,10 +35,10 @@ TEST_CASE("INTEGRATION: end-to-end, exactly as AppLayout wires it - pick non-def
     REQUIRE(liveNow != nullptr);
     REQUIRE(liveNow->symbol == pickedChord.symbol);
 
-    // Step 2: user drags that ChordCard into slot 0 (degree-only, exactly like AppLayout::onSlotFileDropped).
+    // Step 2: user drags that ChordCard into slot 0 (degree-only, exactly like AppLayout::onChordFileDropped).
     sequencer.setSlotDegree(0, Degree::I);
 
-    // Step 3: user clicks "Save Preset" - exactly ProgressionSequencer::onButtonClick's body.
+    // Step 3: user clicks "Save Preset" - exactly ProgressionEditor::onButtonClick's body.
     const auto populatedSlots = sequencer.getPopulatedSlots();
     REQUIRE(populatedSlots.size() == 1);
     CAPTURE(populatedSlots.front().popularityOrder);
@@ -74,7 +74,7 @@ TEST_CASE("INTEGRATION: end-to-end, exactly as AppLayout wires it - pick non-def
     const auto& expectedInD = dDegreeIData.chords[static_cast<std::size_t>(pickedChord.popularityOrder - 1)];
     REQUIRE(expectedInD.symbol != dDegreeIData.chords.front().symbol); // sanity: still not the plain default
 
-    ProgressionSequencer sequencer2("test-sequencer-2",
+    ProgressionEditor sequencer2("test-sequencer-2",
         [&browser](const theory::ProgressionSlot& slot) { return browser.resolveSlot(slot); });
     sequencer2.loadPreset(userPresets.front());
 

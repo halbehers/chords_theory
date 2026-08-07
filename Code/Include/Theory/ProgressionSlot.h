@@ -9,7 +9,7 @@ namespace theory
 // to a specific voicing - 0 means "resolve dynamically against whatever voicing the user
 // currently has selected for this degree" (every built-in preset, and every slot while the
 // sequencer is still being built live). User-saved presets pin popularityOrder at save time (see
-// ProgressionSequencer::getPopulatedSlots), so reloading one later reproduces the exact chords
+// ProgressionEditor::getPopulatedSlots), so reloading one later reproduces the exact chords
 // used when it was saved, independent of the browser's current per-degree voicings.
 //
 // Deliberately NOT pinned by Chord::symbol: a symbol is an absolute-pitch string (e.g. "Cmaj7"),

@@ -32,7 +32,7 @@ namespace
 
 TEST_CASE("ProgressionDragHandle's clickable area is the handle itself, not its decorative label", "[ProgressionDragHandle]")
 {
-    // Same regression as ChordCard/ProgressionSlotView - see the
+    // Same regression as ChordCard - see the
     // setInterceptsMouseClicks(false, false) fix on _label in ProgressionDragHandle's constructor.
     ProgressionDragHandle handle("test-drag-handle");
     handle.setBounds(0, 0, 300, 40);

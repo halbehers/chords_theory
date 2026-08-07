@@ -8,7 +8,7 @@
 #include "PluginProcessor.h"
 #include "Component/ChordDegreeBrowser.h"
 #include "Component/KeyScaleSelector.h"
-#include "Component/ProgressionSequencer.h"
+#include "Component/ProgressionEditor.h"
 #include "Component/SettingsWindow.h"
 #include "Component/SynthEditor.h"
 #include "Component/VoicingSelector.h"
@@ -18,7 +18,7 @@ class AppLayout final : public nlayout::AppLayout,
                          public nelement::SVGButton::OnClickListener,
                          public component::KeyScaleSelector::Listener,
                          public component::ChordDegreeBrowser::Listener,
-                         public component::ProgressionSequencer::Listener,
+                         public component::ProgressionEditor::Listener,
                          public component::VoicingSelector::Listener,
                          public nui::Section::OnPanelChangedListener
 {
@@ -40,10 +40,9 @@ private:
     void onVoicingSelectorRequested(theory::Degree degree, const std::vector<theory::Chord>& availableVoicings, const std::string& currentSymbol) override;
     void onVoicingSelectorClosed() override;
 
-    void onSlotFileDropped(int slotIndex, const juce::String& filePath) override;
+    void onChordFileDropped(double startBeat, const juce::String& filePath) override;
     void onProgressionDragStarted() override;
     void onSlotsChanged() override;
-    void onChordPreviewRequested(const theory::Chord& chord) override;
 
     // _mainSection's own panel-switch mechanism (GridLayout::setVisible()) unconditionally shows
     // every component registered in a panel the moment it becomes active again - including
@@ -78,7 +77,7 @@ private:
     component::KeyScaleSelector _keyScaleSelector;
     component::ChordDegreeBrowser _chordBrowser;
     component::VoicingSelector _voicingSelector { "voicing-selector" };
-    component::ProgressionSequencer _progressionSequencer;
+    component::ProgressionEditor _progressionEditor;
     component::SynthEditor _synthEditor;
 
     // Owns the "Chords"/"Synth" tab switcher - everything above except _settings/_keyScaleSelector
@@ -90,8 +89,8 @@ private:
     nlayout::WindowsManager _windowsManager;
 
     // tempFilePath -> degree, populated in onChordDragStarted() just before starting the OS-level
-    // file drag, consulted by onSlotFileDropped() when that same file lands on a progression slot
-    // inside this same window - see MidiExporter/ProgressionSlotView for the rest of the mechanism.
+    // file drag, consulted by onChordFileDropped() when that same file lands on the MidiEditor
+    // inside this same window - see MidiExporter/MidiEditor for the rest of the mechanism.
     std::unordered_map<juce::String, theory::Degree> _inFlightChordDrags;
 
     // Which degree the voicing selector is currently showing, if open - used to re-derive the

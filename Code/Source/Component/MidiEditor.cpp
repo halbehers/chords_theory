@@ -1,0 +1,830 @@
+#include "Component/MidiEditor.h"
+
+#include <algorithm>
+#include <array>
+#include <cmath>
+
+#include "Theory/NoteConvertor.h"
+
+namespace component
+{
+
+namespace
+{
+    constexpr double kBeatsPerBar = 4.0;
+
+    constexpr int kMinMidiNote = 24;  // C1
+    constexpr int kMaxMidiNote = 108; // C8 - voiceChordCloseToMiddleC always lands ~49-84,
+                                       // comfortably inside this with headroom for manual edits
+    constexpr int kNumPitchRows = kMaxMidiNote - kMinMidiNote + 1;
+    constexpr int kInitialTopMidiNote = 67; // G4, matches the mockup's initial visible top row
+
+    constexpr float kGutterWidth = 40.f;
+    constexpr float kRulerHeight = 24.f;
+    constexpr float kChordLaneHeight = 28.f;
+    constexpr float kScrollbarThickness = 8.f;
+
+    constexpr double kDefaultContentBars = 32.0;
+    constexpr double kDefaultNoteLengthBeats = 1.0; // chords pack ~1 beat apart in the mockup, not
+                                                     // one-bar-per-chord like MidiExporter's export
+    constexpr double kSnapBeats = 0.25; // sixteenth notes at 4 beats/bar
+    constexpr float kResizeHandleWidth = 7.f; // fixed screen pixels regardless of zoom
+
+    constexpr float kRulerTickHeight = 16.f; // bottom-aligned tick mark height within the ruler row
+    constexpr float kRulerTickLabelGap = 8.f; // horizontal gap between a tick and its beat/bar label
+
+    constexpr float kMinPixelsPerBeat = 20.f, kMaxPixelsPerBeat = 400.f, kDefaultPixelsPerBeat = 80.f;
+    constexpr float kMinRowHeight = 8.f, kMaxRowHeight = 40.f, kDefaultRowHeight = 16.f;
+    constexpr float kZoomStepMultiplier = 1.08f; // multiplicative, not additive - additive steps
+                                                  // feel wildly different at low vs. high zoom
+    constexpr double kWheelScrollBeats = 2.0; // per full wheel notch
+    constexpr float kWheelScrollRows = 3.0f;
+
+    constexpr std::array<bool, 12> kIsBlackKey { false,true,false,true,false,false,true,false,true,false,true,false };
+    const std::array<juce::String, 12> kNoteNames { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
+}
+
+MidiEditor::MidiEditor(const std::string& identifier):
+    Component(identifier)
+{
+    displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
+    displayBorder(nui::Theme::ThemeColor::BORDER, 1.f, nui::Theme::getBorderRadius(), 1.f);
+
+    _scrollRow = static_cast<float>(kMaxMidiNote - kInitialTopMidiNote);
+    _pixelsPerBeat = kDefaultPixelsPerBeat;
+    _rowHeight = kDefaultRowHeight;
+
+    addAndMakeVisible(_hScrollBar);
+    addAndMakeVisible(_vScrollBar);
+    _hScrollBar.addListener(this);
+    _vScrollBar.addListener(this);
+
+    // Matches VoicingSelector's own scrollbar exactly: same thickness/colour, and the same
+    // auto-hide-until-hovering-and-actually-needed behaviour (see mouseEnter/mouseExit,
+    // updateScrollBarVisibility).
+    _hScrollBar.setColour(juce::ScrollBar::thumbColourId, nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce().withAlpha(0.5f));
+    _vScrollBar.setColour(juce::ScrollBar::thumbColourId, nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce().withAlpha(0.5f));
+
+    addMouseListener(this, true);
+}
+
+MidiEditor::~MidiEditor()
+{
+    _hScrollBar.removeListener(this);
+    _vScrollBar.removeListener(this);
+}
+
+void MidiEditor::paint(juce::Graphics& g)
+{
+    Component::paint(g);
+
+    {
+        juce::Graphics::ScopedSaveState saved(g);
+        g.reduceClipRegion(_contentArea.toNearestInt());
+        paintGridlines(g);
+        paintNotes(g);
+    }
+
+    {
+        // Extends all the way to every remaining edge - left (under the gutter) and right/bottom
+        // (under the scrollbars' own reserved space) - since the chord lane isn't relative to
+        // either the gutter or the scrollbars; there's nothing else claiming that space, and its
+        // bottom corners need to reach the widget's own true bottom-left/right corners for their
+        // rounding (see paintChordLane) to land exactly on the widget's own outer silhouette.
+        const juce::Rectangle<float> chordLaneBounds(0.f, _contentArea.getBottom(),
+            static_cast<float>(getWidth()), static_cast<float>(getHeight()) - _contentArea.getBottom());
+        juce::Graphics::ScopedSaveState saved(g);
+        g.reduceClipRegion(chordLaneBounds.toNearestInt());
+        paintChordLane(g);
+    }
+
+    paintRuler(g);
+    paintGutter(g);
+}
+
+void MidiEditor::resized()
+{
+    Component::resized();
+
+    const auto bounds = getLocalBounds().toFloat();
+
+    _hScrollBar.setBounds(juce::Rectangle<float>(kGutterWidth, bounds.getHeight() - kScrollbarThickness,
+        bounds.getWidth() - kGutterWidth - kScrollbarThickness, kScrollbarThickness).toNearestInt());
+    _vScrollBar.setBounds(juce::Rectangle<float>(bounds.getWidth() - kScrollbarThickness, kRulerHeight,
+        kScrollbarThickness, bounds.getHeight() - kRulerHeight - kScrollbarThickness).toNearestInt());
+
+    const auto gridBottom = bounds.getHeight() - kScrollbarThickness - kChordLaneHeight;
+    _contentArea = juce::Rectangle<float>(kGutterWidth, kRulerHeight,
+        juce::jmax(0.f, bounds.getWidth() - kGutterWidth - kScrollbarThickness),
+        juce::jmax(0.f, gridBottom - kRulerHeight));
+
+    refreshScrollRanges();
+}
+
+void MidiEditor::addChordAtBeat(double startBeat, const theory::Chord& chord)
+{
+    const auto barIndex = std::floor(juce::jmax(0.0, startBeat) / kBeatsPerBar);
+    const auto cellStart = barIndex * kBeatsPerBar;
+    const auto cellEnd = cellStart + kBeatsPerBar;
+
+    int fullyCoveringIndex = -1;
+    auto leftBound = cellStart;
+    auto rightBound = cellEnd;
+
+    for (int i = 0; i < static_cast<int>(_chordBlocks.size()); ++i)
+    {
+        const auto& block = _chordBlocks[static_cast<std::size_t>(i)];
+        const auto blockEnd = block.startBeat + effectiveChordBlockLength(block);
+        if (block.startBeat >= cellEnd || blockEnd <= cellStart)
+            continue; // no overlap with the target cell at all
+
+        if (block.startBeat <= cellStart && blockEnd >= cellEnd)
+        {
+            fullyCoveringIndex = i;
+            break;
+        }
+
+        // Simplified two-sided model: a block touching the cell's left edge caps how far left the
+        // new chord can start, one touching (or starting inside) the right side caps how far right
+        // it can end. Doesn't handle a block sitting as an island fully inside the cell with free
+        // space on both sides of it - an edge case only reachable via manual resizing, not from a
+        // plain chord-after-chord drop sequence.
+        if (block.startBeat <= cellStart)
+            leftBound = juce::jmax(leftBound, blockEnd);
+        else
+            rightBound = juce::jmin(rightBound, block.startBeat);
+    }
+
+    double resolvedStart = cellStart;
+    double resolvedLength = kBeatsPerBar;
+
+    if (fullyCoveringIndex >= 0)
+    {
+        const auto removedId = _chordBlocks[static_cast<std::size_t>(fullyCoveringIndex)].id;
+        _chordBlocks.erase(_chordBlocks.begin() + fullyCoveringIndex);
+        _notes.erase(std::remove_if(_notes.begin(), _notes.end(),
+            [removedId](const MidiNoteBlock& note) { return note.sourceChordId == removedId; }), _notes.end());
+    }
+    else
+    {
+        if (leftBound >= rightBound)
+            return; // no free room left in this cell at all
+
+        resolvedStart = leftBound;
+        resolvedLength = rightBound - leftBound;
+    }
+
+    const auto chordId = _nextChordBlockId++;
+    _chordBlocks.push_back({ chordId, chord.readableName, resolvedStart, resolvedLength });
+
+    for (const auto midiNote : theory::NoteConvertor::voiceChordCloseToMiddleC(chord))
+        _notes.push_back({ midiNote, resolvedStart, resolvedLength, chordId });
+
+    refreshScrollRanges();
+    repaint();
+}
+
+std::optional<int> MidiEditor::getNoteMidiPitch(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(_notes.size()))
+        return std::nullopt;
+    return _notes[static_cast<std::size_t>(index)].midiNote;
+}
+
+std::optional<double> MidiEditor::getNoteStartBeat(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(_notes.size()))
+        return std::nullopt;
+    return _notes[static_cast<std::size_t>(index)].startBeat;
+}
+
+std::optional<double> MidiEditor::getNoteLengthBeats(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(_notes.size()))
+        return std::nullopt;
+    return _notes[static_cast<std::size_t>(index)].lengthBeats;
+}
+
+std::optional<double> MidiEditor::getChordBlockStartBeat(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(_chordBlocks.size()))
+        return std::nullopt;
+    return _chordBlocks[static_cast<std::size_t>(index)].startBeat;
+}
+
+std::optional<double> MidiEditor::getChordBlockLengthBeats(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(_chordBlocks.size()))
+        return std::nullopt;
+    return effectiveChordBlockLength(_chordBlocks[static_cast<std::size_t>(index)]);
+}
+
+void MidiEditor::addListener(Listener* listener)
+{
+    _listeners.push_back(listener);
+}
+
+void MidiEditor::removeListener(Listener* listener)
+{
+    _listeners.erase(std::remove(_listeners.begin(), _listeners.end(), listener), _listeners.end());
+}
+
+bool MidiEditor::isInterestedInFileDrag(const juce::StringArray& files)
+{
+    return files.size() == 1 && files[0].endsWithIgnoreCase(".mid");
+}
+
+void MidiEditor::fileDragEnter(const juce::StringArray&, int, int)
+{
+}
+
+void MidiEditor::fileDragExit(const juce::StringArray&)
+{
+}
+
+void MidiEditor::filesDropped(const juce::StringArray& files, int x, int y)
+{
+    juce::ignoreUnused(y);
+
+    if (files.isEmpty())
+        return;
+
+    const auto dropBeat = juce::jmax(0.0, static_cast<double>(xToBeat(static_cast<float>(x))));
+    for (auto* listener : _listeners)
+        listener->onChordFileDropped(dropBeat, files[0]);
+}
+
+void MidiEditor::scrollBarMoved(juce::ScrollBar* scrollBarThatHasMoved, double newRangeStart)
+{
+    if (scrollBarThatHasMoved == &_hScrollBar)
+        _scrollBeat = juce::jmax(0.0, newRangeStart);
+    else if (scrollBarThatHasMoved == &_vScrollBar)
+        _scrollRow = static_cast<float>(juce::jmax(0.0, newRangeStart));
+
+    repaint();
+}
+
+void MidiEditor::mouseEnter(const juce::MouseEvent&)
+{
+    _isHovering = true;
+    updateScrollBarVisibility();
+}
+
+void MidiEditor::mouseExit(const juce::MouseEvent& event)
+{
+    // addMouseListener(this, true) means this also fires for every child's own boundary crossings
+    // (e.g. moving from the content area onto a scrollbar) - only treat it as a real "left the
+    // whole editor" exit if the pointer has actually left this component's own bounds.
+    if (getLocalBounds().contains(event.getEventRelativeTo(this).getPosition()))
+        return;
+
+    _isHovering = false;
+    updateScrollBarVisibility();
+}
+
+void MidiEditor::mouseMove(const juce::MouseEvent& event)
+{
+    updateHoverState(event.position);
+}
+
+void MidiEditor::mouseDown(const juce::MouseEvent& event)
+{
+    _dragStartMouse = event.position;
+    _lastMousePosition = event.position;
+
+    const auto noteIndex = hitTestNote(event.position);
+    if (noteIndex >= 0)
+    {
+        const auto& note = _notes[static_cast<std::size_t>(noteIndex)];
+        _draggedNoteIndex = noteIndex;
+        if (isInNoteResizeZone(noteIndex, event.position, true))
+            _dragMode = DragMode::ResizeNoteStart;
+        else if (isInNoteResizeZone(noteIndex, event.position, false))
+            _dragMode = DragMode::ResizeNoteEnd;
+        else
+            _dragMode = DragMode::MoveNote;
+        _dragStartBeat = note.startBeat;
+        _dragStartLengthBeats = note.lengthBeats;
+        _dragStartMidiNote = note.midiNote;
+        startTimerHz(45);
+        return;
+    }
+
+    const auto chordIndex = hitTestChordBlock(event.position);
+    if (chordIndex >= 0)
+    {
+        const auto& block = _chordBlocks[static_cast<std::size_t>(chordIndex)];
+        _draggedChordIndex = chordIndex;
+        _dragMode = DragMode::MoveChordBlock;
+        _dragStartBeat = block.startBeat;
+        startTimerHz(45);
+        return;
+    }
+
+    _dragMode = DragMode::None;
+}
+
+void MidiEditor::mouseDrag(const juce::MouseEvent& event)
+{
+    _lastMousePosition = event.position;
+    applyDragAt(event.position);
+}
+
+void MidiEditor::mouseUp(const juce::MouseEvent&)
+{
+    stopTimer();
+    _dragMode = DragMode::None;
+    _draggedNoteIndex = -1;
+    _draggedChordIndex = -1;
+    refreshScrollRanges();
+    repaint();
+}
+
+void MidiEditor::mouseDoubleClick(const juce::MouseEvent& event)
+{
+    const auto noteIndex = hitTestNote(event.position);
+    if (noteIndex >= 0)
+    {
+        _notes.erase(_notes.begin() + noteIndex);
+        _hoveredNoteIndex = -1;
+        refreshScrollRanges();
+        repaint();
+        return;
+    }
+
+    const auto chordIndex = hitTestChordBlock(event.position);
+    if (chordIndex >= 0)
+    {
+        _chordBlocks.erase(_chordBlocks.begin() + chordIndex);
+        refreshScrollRanges();
+        repaint();
+        return;
+    }
+
+    if (!_contentArea.contains(event.position))
+        return;
+
+    _notes.push_back({ yToPitch(event.position.y), juce::jmax(0.0, snapBeat(xToBeat(event.position.x))), kDefaultNoteLengthBeats, -1 });
+    refreshScrollRanges();
+    repaint();
+}
+
+void MidiEditor::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
+{
+    if (event.mods.isCommandDown() && event.mods.isShiftDown())
+    {
+        zoomVertical(std::pow(kZoomStepMultiplier, wheel.deltaY), event.position);
+        return;
+    }
+    if (event.mods.isCommandDown())
+    {
+        zoomHorizontal(std::pow(kZoomStepMultiplier, wheel.deltaY), event.position);
+        return;
+    }
+
+    if (event.mods.isShiftDown())
+    {
+        _scrollBeat = juce::jmax(0.0, _scrollBeat - static_cast<double>(wheel.deltaY) * kWheelScrollBeats);
+    }
+    else
+    {
+        _scrollRow = juce::jlimit(0.f, static_cast<float>(kNumPitchRows) - 1.f, _scrollRow - wheel.deltaY * kWheelScrollRows);
+        if (wheel.deltaX != 0.f)
+            _scrollBeat = juce::jmax(0.0, _scrollBeat - static_cast<double>(wheel.deltaX) * kWheelScrollBeats);
+    }
+
+    refreshScrollRanges();
+    repaint();
+}
+
+void MidiEditor::mouseMagnify(const juce::MouseEvent& event, float scaleFactor)
+{
+    zoomHorizontal(scaleFactor, event.position);
+}
+
+void MidiEditor::timerCallback()
+{
+    // Auto-scroll while dragging near an edge - nudge the scroll offset, then re-apply the drag at
+    // the same (now-stale-relative-to-content) mouse position so it keeps tracking it. mouseDrag
+    // alone only fires on actual OS mouse-move events, never while the pointer holds still.
+    constexpr float kEdgeMargin = 24.f;
+
+    if (_dragMode == DragMode::None)
+        return;
+
+    if (_lastMousePosition.x < _contentArea.getX() + kEdgeMargin)
+        _scrollBeat = juce::jmax(0.0, _scrollBeat - 0.15);
+    else if (_lastMousePosition.x > _contentArea.getRight() - kEdgeMargin)
+        _scrollBeat += 0.15;
+
+    if (_dragMode != DragMode::MoveChordBlock)
+    {
+        if (_lastMousePosition.y < _contentArea.getY() + kEdgeMargin)
+            _scrollRow = juce::jmax(0.f, _scrollRow - 0.3f);
+        else if (_lastMousePosition.y > _contentArea.getBottom() - kEdgeMargin)
+            _scrollRow = juce::jmin(static_cast<float>(kNumPitchRows) - 1.f, _scrollRow + 0.3f);
+    }
+
+    refreshScrollRanges();
+    applyDragAt(_lastMousePosition);
+}
+
+void MidiEditor::paintGridlines(juce::Graphics& g) const
+{
+    const auto border = nui::Theme::newColor(nui::Theme::ThemeColor::BORDER).asJuce();
+
+    g.setColour(border.withAlpha(0.15f));
+    for (int midiNote = kMinMidiNote; midiNote <= kMaxMidiNote; ++midiNote)
+    {
+        const auto y = pitchToY(midiNote);
+        if (y < _contentArea.getY() - _rowHeight || y > _contentArea.getBottom())
+            continue;
+
+        g.drawHorizontalLine(static_cast<int>(y), _contentArea.getX(), _contentArea.getRight());
+    }
+
+    const auto firstBeat = juce::jmax(0, static_cast<int>(std::floor(xToBeat(_contentArea.getX()))));
+    const auto lastBeat = static_cast<int>(std::ceil(xToBeat(_contentArea.getRight())));
+    for (int beat = firstBeat; beat <= lastBeat; ++beat)
+    {
+        const auto x = beatToX(static_cast<double>(beat));
+        const auto isBarLine = beat % static_cast<int>(kBeatsPerBar) == 0;
+        g.setColour(border.withAlpha(isBarLine ? 0.35f : 0.15f));
+        g.drawVerticalLine(static_cast<int>(x), _contentArea.getY(), _contentArea.getBottom());
+    }
+}
+
+void MidiEditor::paintChordLane(juce::Graphics& g) const
+{
+    const auto laneTop = _contentArea.getBottom();
+    const auto laneWidth = static_cast<float>(getWidth());
+    const auto laneHeight = static_cast<float>(getHeight()) - laneTop;
+    const auto radius = nui::Theme::getBorderRadius();
+
+    // Reaches every remaining edge (left, right, bottom) so its bottom-left/bottom-right corners
+    // land exactly on the whole widget's own outer corners - only the bottom two are rounded here,
+    // matching the widget-level displayBackground/displayBorder radius (see the constructor and
+    // paintRuler's own top-rounded counterpart), since a plain fillRect/drawRect would otherwise
+    // square off those corners over top of the widget's own rounded background/border.
+    juce::Path laneBand;
+    laneBand.addRoundedRectangle(0.f, laneTop, laneWidth, laneHeight, radius, radius, false, false, true, true);
+
+    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+    g.fillPath(laneBand);
+    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::BORDER).asJuce());
+    g.strokePath(laneBand, juce::PathStrokeType(1.f));
+
+    const auto accent = nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce();
+    g.setFont(nui::Theme::newFont(nui::Theme::REGULAR, nui::Theme::SMALL));
+
+    for (const auto& block : _chordBlocks)
+    {
+        const auto length = effectiveChordBlockLength(block);
+        const auto bounds = juce::Rectangle<float>(beatToX(block.startBeat), laneTop + 2.f,
+            static_cast<float>(length * static_cast<double>(_pixelsPerBeat)) - 4.f, kChordLaneHeight - 4.f);
+        if (bounds.getRight() < _contentArea.getX() || bounds.getX() > _contentArea.getRight())
+            continue;
+
+        g.setColour(accent.withAlpha(0.2f));
+        g.fillRoundedRectangle(bounds, 4.f);
+        g.setColour(accent);
+        g.drawRoundedRectangle(bounds, 4.f, 1.f);
+
+        g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::TEXT).asJuce());
+        g.drawText(block.label, bounds, juce::Justification::centred, true);
+    }
+}
+
+void MidiEditor::paintNotes(juce::Graphics& g) const
+{
+    const auto accent = nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce();
+
+    for (int i = 0; i < static_cast<int>(_notes.size()); ++i)
+    {
+        const auto& note = _notes[static_cast<std::size_t>(i)];
+        auto bounds = juce::Rectangle<float>(beatToX(note.startBeat), pitchToY(note.midiNote) + 1.f,
+            static_cast<float>(note.lengthBeats * static_cast<double>(_pixelsPerBeat)) - 2.f, _rowHeight - 2.f);
+
+        if (bounds.getBottom() < _contentArea.getY() || bounds.getY() > _contentArea.getBottom()
+            || bounds.getRight() < _contentArea.getX() || bounds.getX() > _contentArea.getRight())
+            continue;
+
+        g.setColour(accent.withAlpha(0.2f));
+        g.fillRoundedRectangle(bounds, 3.f);
+
+        if (i == _hoveredNoteIndex && _hoveredIsResizeZone)
+        {
+            g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::EMPTY_SHADE).asJuce());
+            g.fillRoundedRectangle(_hoveredResizeIsLeftEdge ? bounds.removeFromLeft(kResizeHandleWidth) : bounds.removeFromRight(kResizeHandleWidth), 3.f);
+        }
+    }
+}
+
+void MidiEditor::paintRuler(juce::Graphics& g) const
+{
+    const juce::Rectangle<float> rulerBounds(kGutterWidth, 0.f, static_cast<float>(getWidth()) - kGutterWidth, kRulerHeight);
+    const auto radius = nui::Theme::getBorderRadius();
+
+    // Spans the full width (not just rulerBounds, which starts past the gutter) so its top-left/
+    // top-right corners land exactly on the whole widget's own outer corners - only the top two are
+    // rounded here, matching the widget-level displayBackground/displayBorder radius (see the
+    // constructor and paintChordLane's own bottom-rounded counterpart). This also covers what used
+    // to be the gutter's own separate top-left corner patch, so paintGutter no longer draws one.
+    juce::Path topBand;
+    topBand.addRoundedRectangle(0.f, 0.f, static_cast<float>(getWidth()), kRulerHeight, radius, radius, true, true, false, false);
+
+    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+    g.fillPath(topBand);
+    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::BORDER).asJuce());
+    g.strokePath(topBand, juce::PathStrokeType(1.f));
+
+    g.setFont(nui::Theme::newFont(nui::Theme::REGULAR, nui::Theme::SMALL));
+
+    const auto firstBeat = juce::jmax(0, static_cast<int>(std::floor(xToBeat(rulerBounds.getX()))));
+    const auto lastBeat = static_cast<int>(std::ceil(xToBeat(rulerBounds.getRight())));
+    for (int beat = firstBeat; beat <= lastBeat; ++beat)
+    {
+        const auto x = beatToX(static_cast<double>(beat));
+        if (x < rulerBounds.getX() || x > rulerBounds.getRight())
+            continue;
+
+        const auto bar = beat / static_cast<int>(kBeatsPerBar) + 1;
+        const auto beatInBar = beat % static_cast<int>(kBeatsPerBar);
+        const auto label = beatInBar == 0 ? juce::String(bar) : juce::String(bar) + "." + juce::String(beatInBar + 1);
+
+        g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::TEXT).asJuce());
+        g.drawText(label, juce::Rectangle<float>(x + kRulerTickLabelGap, 0.f, 60.f, kRulerHeight), juce::Justification::centredLeft, true);
+
+        g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::BORDER).asJuce());
+        g.drawVerticalLine(static_cast<int>(x), kRulerHeight - kRulerTickHeight, kRulerHeight);
+    }
+}
+
+void MidiEditor::paintGutter(juce::Graphics& g) const
+{
+    // The corner above the grid (behind the ruler's own left edge) is now covered by paintRuler's
+    // own top-rounded band, which spans the full widget width - painting it again here would just
+    // square off the widget's rounded top-left corner over top of that. Only the actual per-row key
+    // cells below get the white/black key colouring, clipped strictly to the grid's own vertical
+    // span so nothing bleeds into the ruler or chord lane rows.
+    juce::Graphics::ScopedSaveState saved(g);
+    g.reduceClipRegion(juce::Rectangle<float>(0.f, _contentArea.getY(), kGutterWidth, _contentArea.getHeight()).toNearestInt());
+
+    const auto whiteKeyColour = juce::Colour(0xFFD9D9D9);
+    const auto blackKeyColour = nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce();
+
+    for (int midiNote = kMinMidiNote; midiNote <= kMaxMidiNote; ++midiNote)
+    {
+        const auto y = pitchToY(midiNote);
+        if (y + _rowHeight < _contentArea.getY() || y > _contentArea.getBottom())
+            continue;
+
+        const auto isBlackKey = kIsBlackKey[static_cast<std::size_t>(midiNote % 12)];
+        g.setColour(isBlackKey ? blackKeyColour : whiteKeyColour);
+        g.fillRect(juce::Rectangle<float>(0.f, y, kGutterWidth, _rowHeight));
+    }
+
+    // Drawn as dedicated 1px lines rather than a per-row drawRect border - two adjacent rows each
+    // drawing a float-stroked rect on their shared edge can anti-alias to a visibly thicker seam
+    // whenever _rowHeight (zoom-adjustable) doesn't land on a whole pixel; drawHorizontalLine/
+    // drawVerticalLine always draw exactly one physical pixel, and each boundary is only drawn once.
+    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::BORDER).asJuce());
+    for (int midiNote = kMinMidiNote; midiNote <= kMaxMidiNote; ++midiNote)
+    {
+        const auto y = pitchToY(midiNote);
+        if (y + _rowHeight < _contentArea.getY() || y > _contentArea.getBottom())
+            continue;
+
+        g.drawHorizontalLine(static_cast<int>(y), 0.f, kGutterWidth);
+    }
+    g.drawVerticalLine(0, _contentArea.getY(), _contentArea.getBottom());
+    g.drawVerticalLine(static_cast<int>(kGutterWidth), _contentArea.getY(), _contentArea.getBottom());
+
+    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce()); // dark text over the light #D9D9D9 white-key cells
+    g.setFont(nui::Theme::newFont(nui::Theme::REGULAR, nui::Theme::SMALL));
+
+    for (int midiNote = kMinMidiNote; midiNote <= kMaxMidiNote; ++midiNote)
+    {
+        if (kIsBlackKey[static_cast<std::size_t>(midiNote % 12)])
+            continue;
+
+        const auto y = pitchToY(midiNote);
+        if (y + _rowHeight < _contentArea.getY() || y > _contentArea.getBottom())
+            continue;
+
+        const auto label = kNoteNames[static_cast<std::size_t>(midiNote % 12)] + juce::String(midiNote / 12 - 1);
+        g.drawText(label, juce::Rectangle<float>(2.f, y, kGutterWidth - 4.f, _rowHeight), juce::Justification::centred, true);
+    }
+}
+
+double MidiEditor::effectiveChordBlockLength(const ChordBlockData& block) const
+{
+    auto maxLength = 0.0;
+    auto foundAny = false;
+
+    for (const auto& note : _notes)
+    {
+        if (note.sourceChordId != block.id)
+            continue;
+
+        foundAny = true;
+        maxLength = juce::jmax(maxLength, note.lengthBeats);
+    }
+
+    return foundAny ? maxLength : block.lengthBeats;
+}
+
+float MidiEditor::beatToX(double beat) const noexcept
+{
+    return kGutterWidth + static_cast<float>((beat - _scrollBeat) * static_cast<double>(_pixelsPerBeat));
+}
+
+double MidiEditor::xToBeat(float x) const noexcept
+{
+    return _scrollBeat + static_cast<double>((x - kGutterWidth) / _pixelsPerBeat);
+}
+
+float MidiEditor::pitchToY(int midiNote) const noexcept
+{
+    const auto rowIndex = static_cast<float>(kMaxMidiNote - midiNote); // higher pitch = higher on screen
+    return kRulerHeight + (rowIndex - _scrollRow) * _rowHeight;
+}
+
+int MidiEditor::yToPitch(float y) const noexcept
+{
+    const auto rowIndex = static_cast<int>(std::floor(_scrollRow + (y - kRulerHeight) / _rowHeight));
+    return juce::jlimit(kMinMidiNote, kMaxMidiNote, kMaxMidiNote - rowIndex);
+}
+
+double MidiEditor::snapBeat(double beat) noexcept
+{
+    return juce::jmax(0.0, std::round(beat / kSnapBeats) * kSnapBeats);
+}
+
+int MidiEditor::hitTestNote(juce::Point<float> position) const
+{
+    for (int i = static_cast<int>(_notes.size()) - 1; i >= 0; --i)
+    {
+        const auto& note = _notes[static_cast<std::size_t>(i)];
+        const juce::Rectangle<float> bounds(beatToX(note.startBeat), pitchToY(note.midiNote),
+            static_cast<float>(note.lengthBeats * static_cast<double>(_pixelsPerBeat)), _rowHeight);
+        if (bounds.contains(position))
+            return i;
+    }
+    return -1;
+}
+
+int MidiEditor::hitTestChordBlock(juce::Point<float> position) const
+{
+    const auto laneTop = _contentArea.getBottom();
+    if (position.y < laneTop || position.y > laneTop + kChordLaneHeight)
+        return -1;
+
+    for (int i = static_cast<int>(_chordBlocks.size()) - 1; i >= 0; --i)
+    {
+        const auto& block = _chordBlocks[static_cast<std::size_t>(i)];
+        const auto x0 = beatToX(block.startBeat);
+        const auto x1 = beatToX(block.startBeat + effectiveChordBlockLength(block));
+        if (position.x >= x0 && position.x <= x1)
+            return i;
+    }
+    return -1;
+}
+
+bool MidiEditor::isInNoteResizeZone(int noteIndex, juce::Point<float> position, bool leftEdge) const
+{
+    if (noteIndex < 0 || noteIndex >= static_cast<int>(_notes.size()))
+        return false;
+
+    const auto& note = _notes[static_cast<std::size_t>(noteIndex)];
+
+    if (leftEdge)
+    {
+        const auto edge = beatToX(note.startBeat);
+        return position.x >= edge && position.x <= edge + kResizeHandleWidth;
+    }
+
+    const auto edge = beatToX(note.startBeat + note.lengthBeats);
+    return position.x >= edge - kResizeHandleWidth && position.x <= edge;
+}
+
+void MidiEditor::applyDragAt(juce::Point<float> position)
+{
+    if (_dragMode == DragMode::None)
+        return;
+
+    const auto snap = !juce::ModifierKeys::currentModifiers.isShiftDown();
+    const auto deltaBeats = xToBeat(position.x) - xToBeat(_dragStartMouse.x);
+
+    if (_dragMode == DragMode::MoveNote && _draggedNoteIndex >= 0)
+    {
+        auto& note = _notes[static_cast<std::size_t>(_draggedNoteIndex)];
+        const auto rawStart = _dragStartBeat + deltaBeats;
+        note.startBeat = juce::jmax(0.0, snap ? snapBeat(rawStart) : rawStart);
+        note.midiNote = yToPitch(position.y);
+        repaint();
+    }
+    else if (_dragMode == DragMode::ResizeNoteEnd && _draggedNoteIndex >= 0)
+    {
+        auto& note = _notes[static_cast<std::size_t>(_draggedNoteIndex)];
+        const auto rawEnd = _dragStartBeat + _dragStartLengthBeats + deltaBeats;
+        const auto snappedEnd = snap ? snapBeat(rawEnd) : rawEnd;
+        note.lengthBeats = juce::jmax(kSnapBeats, snappedEnd - _dragStartBeat);
+        repaint();
+    }
+    else if (_dragMode == DragMode::ResizeNoteStart && _draggedNoteIndex >= 0)
+    {
+        auto& note = _notes[static_cast<std::size_t>(_draggedNoteIndex)];
+        const auto originalEnd = _dragStartBeat + _dragStartLengthBeats; // fixed - only the start edge moves
+        const auto rawStart = _dragStartBeat + deltaBeats;
+        const auto snappedStart = snap ? snapBeat(rawStart) : rawStart;
+        const auto clampedStart = juce::jmin(snappedStart, originalEnd - kSnapBeats);
+        note.startBeat = juce::jmax(0.0, clampedStart);
+        note.lengthBeats = originalEnd - note.startBeat;
+        repaint();
+    }
+    else if (_dragMode == DragMode::MoveChordBlock && _draggedChordIndex >= 0)
+    {
+        auto& block = _chordBlocks[static_cast<std::size_t>(_draggedChordIndex)];
+        const auto rawStart = _dragStartBeat + deltaBeats;
+        block.startBeat = juce::jmax(0.0, snap ? snapBeat(rawStart) : rawStart);
+        repaint();
+    }
+}
+
+void MidiEditor::updateHoverState(juce::Point<float> position)
+{
+    const auto noteIndex = hitTestNote(position);
+    const auto isLeftResize = noteIndex >= 0 && isInNoteResizeZone(noteIndex, position, true);
+    const auto isResize = noteIndex >= 0 && (isLeftResize || isInNoteResizeZone(noteIndex, position, false));
+
+    if (noteIndex == _hoveredNoteIndex && isResize == _hoveredIsResizeZone && isLeftResize == _hoveredResizeIsLeftEdge)
+        return;
+
+    _hoveredNoteIndex = noteIndex;
+    _hoveredIsResizeZone = isResize;
+    _hoveredResizeIsLeftEdge = isLeftResize;
+
+    if (noteIndex < 0)
+        setMouseCursor(juce::MouseCursor::NormalCursor);
+    else if (isResize)
+        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
+    else
+        setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+
+    repaint();
+}
+
+void MidiEditor::refreshScrollRanges()
+{
+    auto furthestBeat = kDefaultContentBars * kBeatsPerBar;
+    for (const auto& note : _notes)
+        furthestBeat = juce::jmax(furthestBeat, note.startBeat + note.lengthBeats);
+    for (const auto& block : _chordBlocks)
+        furthestBeat = juce::jmax(furthestBeat, block.startBeat + block.lengthBeats);
+    const auto contentBeats = furthestBeat + 4.0 * kBeatsPerBar;
+
+    const auto visibleBeats = _pixelsPerBeat > 0.f ? static_cast<double>(_contentArea.getWidth() / _pixelsPerBeat) : 0.0;
+    _scrollBeat = juce::jlimit(0.0, juce::jmax(0.0, contentBeats - visibleBeats), _scrollBeat);
+    _hScrollBar.setRangeLimits(0.0, contentBeats, juce::dontSendNotification);
+    _hScrollBar.setCurrentRange(_scrollBeat, visibleBeats, juce::dontSendNotification);
+
+    const auto visibleRows = _rowHeight > 0.f ? _contentArea.getHeight() / _rowHeight : 0.f;
+    _scrollRow = juce::jlimit(0.f, juce::jmax(0.f, static_cast<float>(kNumPitchRows) - visibleRows), _scrollRow);
+    _vScrollBar.setRangeLimits(0.0, static_cast<double>(kNumPitchRows), juce::dontSendNotification);
+    _vScrollBar.setCurrentRange(static_cast<double>(_scrollRow), static_cast<double>(visibleRows), juce::dontSendNotification);
+
+    updateScrollBarVisibility();
+}
+
+void MidiEditor::updateScrollBarVisibility()
+{
+    // Matches VoicingSelector::updateScrollBarVisibility exactly: hidden unless both hovering and
+    // actually needed - re-evaluated here too (not just from mouseEnter/mouseExit) since zoom or
+    // content growth/shrinkage can flip "needed" without any hover-state change at all.
+    const auto needsHorizontalScroll = _hScrollBar.getCurrentRangeSize() < _hScrollBar.getMaximumRangeLimit() - _hScrollBar.getMinimumRangeLimit();
+    const auto needsVerticalScroll = _vScrollBar.getCurrentRangeSize() < _vScrollBar.getMaximumRangeLimit() - _vScrollBar.getMinimumRangeLimit();
+
+    _hScrollBar.setVisible(_isHovering && needsHorizontalScroll);
+    _vScrollBar.setVisible(_isHovering && needsVerticalScroll);
+}
+
+void MidiEditor::zoomHorizontal(float factor, juce::Point<float> anchor)
+{
+    const auto anchorBeat = xToBeat(anchor.x);
+    _pixelsPerBeat = juce::jlimit(kMinPixelsPerBeat, kMaxPixelsPerBeat, _pixelsPerBeat * factor);
+    _scrollBeat = juce::jmax(0.0, anchorBeat - static_cast<double>((anchor.x - kGutterWidth) / _pixelsPerBeat));
+    refreshScrollRanges();
+    repaint();
+}
+
+void MidiEditor::zoomVertical(float factor, juce::Point<float> anchor)
+{
+    const auto anchorRow = _scrollRow + (anchor.y - kRulerHeight) / _rowHeight;
+    _rowHeight = juce::jlimit(kMinRowHeight, kMaxRowHeight, _rowHeight * factor);
+    _scrollRow = juce::jmax(0.f, anchorRow - (anchor.y - kRulerHeight) / _rowHeight);
+    refreshScrollRanges();
+    repaint();
+}
+
+}

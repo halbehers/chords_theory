@@ -7,7 +7,7 @@
 namespace component
 {
 
-// Popup content prompting for a preset name (used by ProgressionSequencer's "Save as preset"
+// Popup content prompting for a preset name (used by ProgressionEditor's "Save as preset"
 // affordance) - a text field plus a confirm button, either of which invokes the supplied callback
 // with the entered name and closes the enclosing CallOutBox. Shown via the static show() helper,
 // wrapping nelement::PopupPanel::show(...) - only ever the popup's content, never a standalone
