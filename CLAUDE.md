@@ -38,43 +38,62 @@ see `README.md` for exact commands (`cmake --workflow --preset default`, `ctest 
   `voiceChordCloseToMiddleC` (pitch classes in chord-array order → ascending MIDI notes, closed
   voicing, lowest note at/below middle C — the first array entry becomes the bass, which correctly
   handles inversions since bass-first order is preserved from the source data).
-- `MidiExporter` — writes temporary Standard MIDI Files (120bpm/4-4 fallback, 960 ticks/quarter,
-  one measure = 4 beats) for both a single chord and a whole progression.
+- `MidiExporter` — writes temporary Standard MIDI Files (120bpm/4-4 fallback, 960 ticks/quarter).
+  `writeSingleChordMidiFile`/`writeProgressionMidiFile` place chords on a rigid one-measure grid
+  (the latter still backs single-chord `ChordCard` drags and remains directly unit-tested, but has
+  no live caller left in the app); `writeMidiEditorContentFile` writes each note at its own exact
+  `startBeat`/`lengthBeats` position (beats → ticks via `kTicksPerQuarterNote`, no quantization) -
+  this is what "Drag it out" actually uses, so the exported MIDI matches the piano roll exactly.
 - `ProgressionSlot`/`ProgressionPreset`/`ProgressionPresetFactory`/`BuiltInProgressionPresets` —
-  presets reference degrees generically (not pinned chord types), resolved against whatever
-  voicing the user currently has selected for that degree at render/export time.
-  `ProgressionPresetLibrary` combines built-ins with user-saved presets, persisted via
-  `juce::PropertiesFile` in `AppSettings::getAppSupportDirectory()` (its own file/lock, separate
-  from `AppSettings`) — shared across every plugin instance and DAW project, same pattern as
-  `AppSettings` itself (including a public file-parameterized constructor for test isolation).
-- `SessionState`/`SessionStateSerializer` — pure data + `juce::ValueTree` (de)serialization for
-  everything a session needs to survive a DAW project close/reopen: Key, Scale, the chosen chord
-  per degree, and the full progression sequencer contents. Deliberately has zero UI/component
-  dependency so it's unit-testable without constructing any `nui::Component`.
+  presets reference degrees generically (not pinned chord types) plus an optional `popularityOrder`
+  pin. `ProgressionEditor::loadPreset` resolves each slot against the live per-degree voicing (or
+  the pin) and places the result at one bar per slot in `MidiEditor`; `ProgressionEditor::
+  getPopulatedSlots` reads back out by sorting `MidiEditor`'s chord blocks by position and
+  reporting each one's `ProgressionSlot`, frozen at drop time (see `MidiEditorState` below) - not
+  re-resolved live. `ProgressionPresetLibrary` combines built-ins with user-saved presets,
+  persisted via `juce::PropertiesFile` in `AppSettings::getAppSupportDirectory()` (its own
+  file/lock, separate from `AppSettings`) — shared across every plugin instance and DAW project,
+  same pattern as `AppSettings` itself (including a public file-parameterized constructor for test
+  isolation).
+- `MidiEditorState`/`SessionState`/`SessionStateSerializer` — pure data + `juce::ValueTree`
+  (de)serialization for everything a session needs to survive a DAW project close/reopen: Key,
+  Scale, the chosen chord per degree, and `MidiEditorState` (a pure-data mirror of `MidiEditor`'s
+  own notes/chord-blocks, each chord block carrying the `ProgressionSlot` it was dropped/loaded
+  with). Deliberately has zero UI/component dependency so it's unit-testable without constructing
+  any `nui::Component` - `MidiEditor::getState()`/`restoreState()` are the bridge on the component
+  side.
 
 **UI layer** (`Code/Include/Component`) — `KeyScaleSelector` (two comboboxes) →
 `ChordDegreeBrowser` (one `ChordCard` per available degree) + `VoicingPicker` (popup, click a
-card) → `ProgressionSequencer` (a dynamically-sized, scrollable row of `ProgressionSlotView` with
-"+"/"-" step controls, `ProgressionPresetPicker`,
-`SavePresetPrompt`, `ProgressionDragHandle`). All follow the template's existing construction
-convention: `nui::Component` base, own a `nlayout::GridLayout<nui::Component> _layout { *this }`,
-`paint()`/`resized()` forward to it, react to `nui::Theme::getChangeBroadcaster()` and
-`AppLocalisation::getChangeBroadcaster()` via `changeListenerCallback`. Components bubble events up
-through small `Listener` interfaces (never reach sideways) — `AppLayout` is the top-level owner
-that wires them together, drives `Theory::MidiExporter`, and owns the drag-and-drop mechanism.
+card) → `ProgressionEditor` (header row: `ProgressionPresetPicker`, `SavePresetPrompt`,
+`ProgressionDragHandle`; below it, `MidiEditor` - a scrollable/zoomable piano roll with a
+pitch-labeled gutter, beat/bar ruler, and a "chord lane" strip). `MidiEditor` is the sole data
+model for the progression: dropping a `ChordCard` splits the chord into movable/resizable note
+blocks plus one labeled chord-lane block; `ProgressionEditor` never keeps its own parallel copy of
+that data, it only reads/writes `MidiEditor` directly (`addChordAtBeat`, `loadPreset`,
+`getPopulatedSlots`, `getMidiEditorState`/`restoreMidiEditorState`). All components follow the
+template's existing construction convention: `nui::Component` base, own a
+`nlayout::GridLayout<nui::Component> _layout { *this }`, `paint()`/`resized()` forward to it, react
+to `nui::Theme::getChangeBroadcaster()` and `AppLocalisation::getChangeBroadcaster()` via
+`changeListenerCallback`. Components bubble events up through small `Listener` interfaces (never
+reach sideways) — `AppLayout` is the top-level owner that wires them together, drives
+`Theory::MidiExporter`, and owns the drag-and-drop mechanism.
 
-**Drag-and-drop** (see `AppLayout::onChordDragStarted`/`onSlotFileDropped`): every chord/progression
-drag is the *same* native OS file drag
-(`juce::DragAndDropContainer::performExternalDragDropOfFiles`) regardless of where it lands — a
-DAW track (imports the temp `.mid` as a clip, no plugin code involved) or a `ProgressionSlotView`
-inside this same window (a `juce::FileDragAndDropTarget`, which can receive a drag that originated
-from its own process just as well as an external one). `AppLayout` keeps a `tempFilePath → Degree`
-map populated right before starting each drag, so an internal drop can be resolved back to a
-chord without re-parsing the MIDI file. `PluginAudioProcessorEditor` inherits
+**Drag-and-drop** (see `AppLayout::onChordDragStarted`/`onChordFileDropped`): every chord drag is
+the *same* native OS file drag (`juce::DragAndDropContainer::performExternalDragDropOfFiles`)
+regardless of where it lands — a DAW track (imports the temp `.mid` as a clip, no plugin code
+involved) or `MidiEditor` inside this same window (a `juce::FileDragAndDropTarget`, which can
+receive a drag that originated from its own process just as well as an external one). `AppLayout`
+keeps a `tempFilePath → Degree` map populated right before starting each drag, so an internal drop
+can be resolved back to a chord without re-parsing the MIDI file. The "Drag it out" whole-
+progression handle (`ProgressionDragHandle`) is a separate gesture-only signal (no file of its
+own) - `AppLayout::onProgressionDragStarted` builds the file itself from `MidiEditor`'s exact
+content via `MidiExporter::writeMidiEditorContentFile`. `PluginAudioProcessorEditor` inherits
 `juce::DragAndDropContainer` explicitly (`juce::AudioProcessorEditor` doesn't).
 
 **Session-state persistence**: `AppLayout::syncStateToValueTree()` (called after every UI change
-that should persist) rebuilds a `SessionState` from the live UI and splices it as an extra child
+that should persist, including `ProgressionEditor::Listener::onContentChanged` - fired on every
+`MidiEditor` mutation) rebuilds a `SessionState` from the live UI and splices it as an extra child
 node into `_parameterManager.getState().state` — the same `juce::AudioProcessorValueTreeState`
 tree `PluginAudioProcessor::getStateInformation`/`setStateInformation` already serializes whole,
 so no changes were needed there. This is *separate* from `ProgressionPresetLibrary`'s persistence:

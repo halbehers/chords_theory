@@ -6,6 +6,8 @@
 #include <nierika_dsp/nierika_dsp.h>
 
 #include "Theory/Chord.h"
+#include "Theory/MidiEditorState.h"
+#include "Theory/ProgressionSlot.h"
 
 namespace component
 {
@@ -15,8 +17,11 @@ namespace component
 // exported .mid file onto it (see AppLayout's in-flight-drag-map resolution, the same mechanism
 // ProgressionSlotView used) adds a labeled chord block to the lane and splits the chord into
 // individually movable/resizable note blocks in the grid above, via addChordAtBeat(). Owns its own
-// in-memory note/chord-block state - deliberately not wired into Theory::SessionState/MidiExporter/
-// ProgressionPresetLibrary yet (a later pass), matching ProgressionEditor's own current scope.
+// in-memory note/chord-block state - getState()/restoreState() bridge that to/from
+// theory::MidiEditorState, the pure-data shape Theory::SessionState (DAW project persistence) and
+// Theory::MidiExporter (exact-content drag export) both consume; ProgressionEditor is the only
+// other component that reaches into this class directly (for presets - see its own loadPreset/
+// getPopulatedSlots).
 //
 // Hand-paints everything itself (no juce::Viewport) - there's no existing precedent in this
 // codebase or nierika_dsp for a Viewport scrolling on both axes with a frozen gutter/ruler synced
@@ -38,7 +43,16 @@ public:
         // the owner resolves filePath via its in-flight drag map and calls addChordAtBeat() back
         // with the result - this class never resolves chord data itself.
         virtual void onChordFileDropped(double startBeat, const juce::String& filePath) = 0;
+
+        // Fired after any mutation (add/move/resize/delete of a note or chord block) - once per
+        // completed gesture, not continuously mid-drag. Default no-op so listeners that don't care
+        // (there's only ever one method to implement otherwise) aren't forced to override it.
+        virtual void onContentChanged() {}
     };
+
+    // Exposed so callers spacing consecutive chords/presets one bar apart (see
+    // ProgressionEditor::loadPreset) don't need to hardcode the bar length themselves.
+    static constexpr double kBeatsPerBar = 4.0;
 
     explicit MidiEditor(const std::string& identifier);
     ~MidiEditor() override;
@@ -51,8 +65,13 @@ public:
     // (chord.readableName), spanning whatever's actually free in that cell: the full bar if
     // empty, the remaining gap if another block partially overlaps it, or the full bar again
     // (replacing that block and the notes it originally created) if another block already fully
-    // occupies it. A no-op if the cell has no free room at all.
-    void addChordAtBeat(double startBeat, const theory::Chord& chord);
+    // occupies it. A no-op if the cell has no free room at all. sourceSlot is frozen onto the new
+    // chord block (see ChordBlockData::sourceSlot) - never re-resolved later.
+    void addChordAtBeat(double startBeat, const theory::Chord& chord, const theory::ProgressionSlot& sourceSlot);
+
+    // Resets to empty - used before loading a preset or restoring session state, both of which
+    // wholesale-replace the current content rather than merge into it.
+    void clear();
 
     [[nodiscard]] int getNoteCount() const { return static_cast<int>(_notes.size()); }
     [[nodiscard]] int getChordBlockCount() const { return static_cast<int>(_chordBlocks.size()); }
@@ -61,6 +80,16 @@ public:
     [[nodiscard]] std::optional<double> getNoteLengthBeats(int index) const;
     [[nodiscard]] std::optional<double> getChordBlockStartBeat(int index) const;
     [[nodiscard]] std::optional<double> getChordBlockLengthBeats(int index) const;
+    [[nodiscard]] std::optional<theory::ProgressionSlot> getChordBlockSlot(int index) const;
+
+    // Pure-data snapshot of the current notes/chord-blocks, and the inverse - used to bridge into
+    // Theory::SessionState (DAW project persistence) and Theory::MidiExporter (exact-content drag
+    // export) without either depending on this being a live nui::Component. restoreState replaces
+    // the current content wholesale (bypassing addChordAtBeat's collision logic, which only makes
+    // sense when resolving a *new* drop against *existing* content) and does not fire
+    // Listener::onContentChanged (it's an inbound sync, not a user-initiated change).
+    [[nodiscard]] theory::MidiEditorState getState() const;
+    void restoreState(const theory::MidiEditorState& state);
 
     void addListener(Listener* listener);
     void removeListener(Listener* listener);
@@ -100,6 +129,8 @@ private:
         std::string label;       // frozen snapshot of Chord::readableName at drop time
         double startBeat = 0.0;
         double lengthBeats = 1.0;
+        theory::ProgressionSlot sourceSlot; // frozen at drop time - degree + the resolved chord's
+                                             // popularityOrder; never re-resolved live afterward
     };
 
     enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, MoveChordBlock };
@@ -135,6 +166,8 @@ private:
     // gestures
     void applyDragAt(juce::Point<float> position);
     void updateHoverState(juce::Point<float> position);
+
+    void notifyContentChanged();
 
     // scroll/zoom
     void refreshScrollRanges();

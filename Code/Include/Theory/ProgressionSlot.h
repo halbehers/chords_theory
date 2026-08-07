@@ -27,6 +27,11 @@ struct ProgressionSlot
 {
     Degree degree = Degree::I;
     int popularityOrder = 0; // 0 = unpinned
+
+    bool operator==(const ProgressionSlot& other) const
+    {
+        return degree == other.degree && popularityOrder == other.popularityOrder;
+    }
 };
 
 }

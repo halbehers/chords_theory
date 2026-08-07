@@ -3,13 +3,18 @@
 
 #include "Component/MidiEditor.h"
 #include "Theory/ChordDatabase.h"
+#include "Theory/MidiEditorState.h"
 #include "Theory/NoteConvertor.h"
+#include "Theory/ProgressionSlot.h"
 
 using component::MidiEditor;
 using theory::Chord;
 using theory::ChordDatabase;
+using theory::Degree;
 using theory::Key;
+using theory::MidiEditorState;
 using theory::NoteConvertor;
+using theory::ProgressionSlot;
 using theory::Scale;
 
 namespace
@@ -51,18 +56,25 @@ namespace
     {
         int droppedCount = 0;
         double lastDroppedBeat = -1.0;
+        int contentChangedCount = 0;
 
         void onChordFileDropped(double startBeat, const juce::String&) override
         {
             ++droppedCount;
             lastDroppedBeat = startBeat;
         }
+
+        void onContentChanged() override { ++contentChangedCount; }
     };
 
     const Chord& getTestChord()
     {
         return ChordDatabase::getInstance().get(Key::C, Scale::Major).degrees.front().chords.front();
     }
+
+    // getTestChord() always resolves to degree I - this just packages that fact for addChordAtBeat
+    // calls that don't care about provenance beyond "a real, consistent slot".
+    ProgressionSlot testSlot(const Chord& chord) { return { Degree::I, chord.popularityOrder }; }
 }
 
 TEST_CASE("MidiEditor::addChordAtBeat splits the chord into one note block per chord tone", "[MidiEditor]")
@@ -73,13 +85,16 @@ TEST_CASE("MidiEditor::addChordAtBeat splits the chord into one note block per c
     const auto& chord = getTestChord();
     const auto expectedNoteCount = static_cast<int>(NoteConvertor::voiceChordCloseToMiddleC(chord).size());
 
-    editor.addChordAtBeat(0.0, chord);
+    editor.addChordAtBeat(0.0, chord, testSlot(chord));
 
     CHECK(editor.getNoteCount() == expectedNoteCount);
     CHECK(editor.getChordBlockCount() == 1);
     REQUIRE(editor.getChordBlockStartBeat(0).has_value());
     CHECK(*editor.getChordBlockStartBeat(0) == Catch::Approx(0.0));
     CHECK(*editor.getChordBlockLengthBeats(0) == Catch::Approx(kBeatsPerBar));
+
+    REQUIRE(editor.getChordBlockSlot(0).has_value());
+    CHECK(*editor.getChordBlockSlot(0) == testSlot(chord));
 }
 
 TEST_CASE("MidiEditor: double-click on empty space adds a note, double-click on a note removes it", "[MidiEditor]")
@@ -103,7 +118,7 @@ TEST_CASE("MidiEditor: dragging a note moves it in both time and pitch", "[MidiE
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord());
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
     REQUIRE(editor.getNoteCount() > 0);
 
     const auto originalPitch = *editor.getNoteMidiPitch(0);
@@ -125,7 +140,7 @@ TEST_CASE("MidiEditor: dragging a note's right edge resizes it without moving it
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord());
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
     REQUIRE(editor.getNoteCount() > 0);
 
     const auto originalPitch = *editor.getNoteMidiPitch(0);
@@ -150,7 +165,7 @@ TEST_CASE("MidiEditor: dragging a note's left edge resizes it without moving its
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(kBeatsPerBar, getTestChord()); // starts at bar 2, leaving room to drag the start earlier
+    editor.addChordAtBeat(kBeatsPerBar, getTestChord(), testSlot(getTestChord())); // starts at bar 2, leaving room to drag the start earlier
     REQUIRE(editor.getNoteCount() > 0);
 
     const auto originalPitch = *editor.getNoteMidiPitch(0);
@@ -175,7 +190,7 @@ TEST_CASE("MidiEditor: a chord block's length tracks the longest of its remainin
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord());
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
     REQUIRE(editor.getNoteCount() > 0);
     REQUIRE(editor.getChordBlockCount() == 1);
     CHECK(*editor.getChordBlockLengthBeats(0) == Catch::Approx(kBeatsPerBar));
@@ -225,8 +240,8 @@ TEST_CASE("MidiEditor: a chord dropped on a fully-occupied beat replaces the exi
     const auto& chordB = ChordDatabase::getInstance().get(Key::C, Scale::Major).degrees[1].chords.front();
     const auto expectedCountB = static_cast<int>(NoteConvertor::voiceChordCloseToMiddleC(chordB).size());
 
-    editor.addChordAtBeat(0.0, chordA);
-    editor.addChordAtBeat(0.0, chordB); // same whole-bar cell, chordA fully occupies it
+    editor.addChordAtBeat(0.0, chordA, { Degree::I, chordA.popularityOrder });
+    editor.addChordAtBeat(0.0, chordB, { Degree::II, chordB.popularityOrder }); // same whole-bar cell, chordA fully occupies it
 
     CHECK(editor.getChordBlockCount() == 1);
     CHECK(editor.getNoteCount() == expectedCountB);
@@ -237,7 +252,7 @@ TEST_CASE("MidiEditor: a chord dropped on a partially-occupied beat takes only t
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord());
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
     REQUIRE(editor.getChordBlockCount() == 1);
     REQUIRE(*editor.getChordBlockStartBeat(0) == Catch::Approx(0.0));
 
@@ -253,9 +268,85 @@ TEST_CASE("MidiEditor: a chord dropped on a partially-occupied beat takes only t
 
     REQUIRE(*editor.getChordBlockStartBeat(0) == Catch::Approx(2.0));
 
-    editor.addChordAtBeat(0.0, getTestChord()); // targets cell [0,4) - [2,4) of it is now occupied
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord())); // targets cell [0,4) - [2,4) of it is now occupied
 
     REQUIRE(editor.getChordBlockCount() == 2);
     CHECK(*editor.getChordBlockStartBeat(1) == Catch::Approx(0.0));
     CHECK(*editor.getChordBlockLengthBeats(1) == Catch::Approx(2.0));
+}
+
+TEST_CASE("MidiEditor::clear empties both notes and chord blocks", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+    REQUIRE(editor.getNoteCount() > 0);
+    REQUIRE(editor.getChordBlockCount() > 0);
+
+    editor.clear();
+
+    CHECK(editor.getNoteCount() == 0);
+    CHECK(editor.getChordBlockCount() == 0);
+}
+
+TEST_CASE("MidiEditor::getState/restoreState round-trips notes, chord blocks, and their sourceSlot exactly", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    const auto& chord = getTestChord();
+    editor.addChordAtBeat(0.0, chord, testSlot(chord));
+    editor.addChordAtBeat(kBeatsPerBar, chord, { Degree::V, chord.popularityOrder });
+
+    const auto state = editor.getState();
+    REQUIRE(state.notes.size() == static_cast<std::size_t>(editor.getNoteCount()));
+    REQUIRE(state.chordBlocks.size() == 2);
+
+    MidiEditor restored("test-midi-editor-restored");
+    restored.setBounds(0, 0, 800, 400);
+    restored.restoreState(state);
+
+    CHECK(restored.getNoteCount() == editor.getNoteCount());
+    CHECK(restored.getChordBlockCount() == editor.getChordBlockCount());
+    CHECK(restored.getState() == state);
+
+    REQUIRE(restored.getChordBlockSlot(0).has_value());
+    CHECK(*restored.getChordBlockSlot(0) == testSlot(chord));
+    REQUIRE(restored.getChordBlockSlot(1).has_value());
+    CHECK(*restored.getChordBlockSlot(1) == ProgressionSlot { Degree::V, chord.popularityOrder });
+}
+
+TEST_CASE("MidiEditor::onContentChanged fires on add/move/resize/delete but not on a plain click", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    RecordingListener listener;
+    editor.addListener(&listener);
+
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+    CHECK(listener.contentChangedCount == 1);
+
+    // A completed drag (move the note) fires once more.
+    const auto pitch = *editor.getNoteMidiPitch(0);
+    const juce::Point<float> start { beatToX(0.5), pitchToY(pitch) + 1.f };
+    const juce::Point<float> dragged { start.x + kPixelsPerBeat, start.y };
+    editor.mouseDown(makeMouseEvent(editor, start));
+    editor.mouseDrag(makeMouseEvent(editor, dragged));
+    editor.mouseUp(makeMouseEvent(editor, dragged));
+    CHECK(listener.contentChangedCount == 2);
+
+    // A plain click (mouseDown immediately followed by mouseUp at the same position, no drag) on
+    // empty space does not count as a mutation.
+    const juce::Point<float> emptySpace { 700.f, 300.f };
+    editor.mouseDown(makeMouseEvent(editor, emptySpace));
+    editor.mouseUp(makeMouseEvent(editor, emptySpace));
+    CHECK(listener.contentChangedCount == 2);
+
+    // Double-click delete fires again.
+    editor.mouseDoubleClick(makeMouseEvent(editor, dragged));
+    CHECK(listener.contentChangedCount == 3);
+
+    editor.removeListener(&listener);
 }

@@ -12,9 +12,6 @@ namespace component
 namespace
 {
     constexpr float kHeaderRowHeight = 32.f;
-
-    constexpr int kMinSlotCount = 1;
-    constexpr int kDefaultSlotCount = 4;
 }
 
 ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolver chordResolver):
@@ -36,9 +33,6 @@ ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolve
     _presetsLabel.setJustificationType(juce::Justification::centredRight);
 
     _midiEditor.addListener(this);
-
-    for (int i = 0; i < kDefaultSlotCount; ++i)
-        addStep();
 
     _layout.setGap(8.f);
     _layout.setDisplayGrid(false);
@@ -90,120 +84,50 @@ void ProgressionEditor::setScale(theory::Scale scale)
     _presetPicker.refreshForScale(scale);
 }
 
-void ProgressionEditor::setSlotDegree(int slotIndex, theory::Degree degree)
+void ProgressionEditor::loadPreset(const theory::ProgressionPreset& preset)
 {
-    setSlot(slotIndex, theory::ProgressionSlot { degree, 0 }); // unpinned - keeps tracking the degree's live voicing
-}
+    _midiEditor.clear();
 
-void ProgressionEditor::setSlot(int slotIndex, const theory::ProgressionSlot& slot)
-{
-    if (slotIndex < 0)
-        return;
-
-    while (slotIndex >= static_cast<int>(_slotData.size()))
-        addStep();
-
-    _slotData[static_cast<std::size_t>(slotIndex)] = slot;
-    _slotOccupied[static_cast<std::size_t>(slotIndex)] = true;
-
-    for (auto* listener : _listeners)
-        listener->onSlotsChanged();
-}
-
-void ProgressionEditor::clearSlot(int slotIndex)
-{
-    if (slotIndex < 0 || slotIndex >= static_cast<int>(_slotData.size()))
-        return;
-
-    _slotOccupied[static_cast<std::size_t>(slotIndex)] = false;
-
-    for (auto* listener : _listeners)
-        listener->onSlotsChanged();
-}
-
-void ProgressionEditor::removeSlotAndShift(int slotIndex)
-{
-    const auto count = static_cast<int>(_slotData.size());
-    if (slotIndex < 0 || slotIndex >= count || !_slotOccupied[static_cast<std::size_t>(slotIndex)])
-        return;
-
-    for (int i = slotIndex; i < count - 1; ++i)
+    for (int i = 0; i < static_cast<int>(preset.slots.size()); ++i)
     {
-        _slotData[static_cast<std::size_t>(i)] = _slotData[static_cast<std::size_t>(i + 1)];
-        _slotOccupied[static_cast<std::size_t>(i)] = _slotOccupied[static_cast<std::size_t>(i + 1)];
+        const auto& slot = preset.slots[static_cast<std::size_t>(i)];
+        if (const auto* chord = _chordResolver ? _chordResolver(slot) : nullptr)
+            _midiEditor.addChordAtBeat(static_cast<double>(i) * MidiEditor::kBeatsPerBar, *chord, slot);
     }
-
-    if (count > kMinSlotCount)
-        removeLastSlot();
-    else
-        _slotOccupied[static_cast<std::size_t>(count - 1)] = false;
-
-    for (auto* listener : _listeners)
-        listener->onSlotsChanged();
-}
-
-std::optional<theory::Degree> ProgressionEditor::getSlotDegree(int slotIndex) const
-{
-    if (slotIndex < 0 || slotIndex >= static_cast<int>(_slotData.size()) || !_slotOccupied[static_cast<std::size_t>(slotIndex)])
-        return std::nullopt;
-
-    return _slotData[static_cast<std::size_t>(slotIndex)].degree;
 }
 
 std::vector<theory::ProgressionSlot> ProgressionEditor::getPopulatedSlots() const
 {
-    std::vector<theory::ProgressionSlot> populated;
-
-    for (int i = 0; i < static_cast<int>(_slotData.size()); ++i)
+    struct IndexedSlot
     {
-        if (!_slotOccupied[static_cast<std::size_t>(i)])
-            continue;
+        double startBeat;
+        theory::ProgressionSlot slot;
+    };
 
-        auto slot = _slotData[static_cast<std::size_t>(i)];
+    std::vector<IndexedSlot> indexed;
+    indexed.reserve(static_cast<std::size_t>(_midiEditor.getChordBlockCount()));
 
-        // Bakes in the currently-resolved chord's popularityOrder - this is what lets "Save as
-        // preset" pin the exact voicing the user had selected, rather than saving just the bare degree.
-        if (const auto* chord = _chordResolver ? _chordResolver(slot) : nullptr)
-            slot.popularityOrder = chord->popularityOrder;
-
-        populated.push_back(slot);
+    for (int i = 0; i < _midiEditor.getChordBlockCount(); ++i)
+    {
+        const auto startBeat = _midiEditor.getChordBlockStartBeat(i);
+        const auto slot = _midiEditor.getChordBlockSlot(i);
+        if (startBeat && slot)
+            indexed.push_back({ *startBeat, *slot });
     }
 
-    return populated;
+    std::sort(indexed.begin(), indexed.end(), [](const auto& a, const auto& b) { return a.startBeat < b.startBeat; });
+
+    std::vector<theory::ProgressionSlot> result;
+    result.reserve(indexed.size());
+    for (const auto& entry : indexed)
+        result.push_back(entry.slot);
+
+    return result;
 }
 
-void ProgressionEditor::loadPreset(const theory::ProgressionPreset& preset)
+void ProgressionEditor::addChordAtBeat(double startBeat, const theory::Chord& chord, const theory::ProgressionSlot& sourceSlot)
 {
-    const auto numToLoad = static_cast<int>(preset.slots.size());
-
-    for (int i = 0; i < numToLoad; ++i)
-        setSlot(i, preset.slots[static_cast<std::size_t>(i)]);
-
-    while (static_cast<int>(_slotData.size()) > juce::jmax(numToLoad, kMinSlotCount))
-        removeLastSlot();
-
-    for (int i = numToLoad; i < static_cast<int>(_slotData.size()); ++i)
-        clearSlot(i); // only non-empty when numToLoad < kMinSlotCount, i.e. an empty preset
-}
-
-void ProgressionEditor::addChordAtBeat(double startBeat, const theory::Chord& chord)
-{
-    _midiEditor.addChordAtBeat(startBeat, chord);
-}
-
-void ProgressionEditor::addStep()
-{
-    _slotData.push_back(theory::ProgressionSlot {});
-    _slotOccupied.push_back(false);
-}
-
-void ProgressionEditor::removeLastSlot()
-{
-    if (static_cast<int>(_slotData.size()) <= kMinSlotCount)
-        return;
-
-    _slotData.pop_back();
-    _slotOccupied.pop_back();
+    _midiEditor.addChordAtBeat(startBeat, chord, sourceSlot);
 }
 
 void ProgressionEditor::addListener(Listener* listener)
@@ -220,6 +144,12 @@ void ProgressionEditor::onChordFileDropped(double startBeat, const juce::String&
 {
     for (auto* listener : _listeners)
         listener->onChordFileDropped(startBeat, filePath); // pure bubble-up, never resolves itself
+}
+
+void ProgressionEditor::onContentChanged()
+{
+    for (auto* listener : _listeners)
+        listener->onContentChanged();
 }
 
 void ProgressionEditor::onPresetSelected(const theory::ProgressionPreset& preset)

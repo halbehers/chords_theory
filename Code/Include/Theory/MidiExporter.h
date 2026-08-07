@@ -6,6 +6,7 @@
 #include <juce_core/juce_core.h>
 
 #include "Theory/Chord.h"
+#include "Theory/MidiEditorState.h"
 #include "Theory/ResolvedProgressionSlot.h"
 
 namespace theory
@@ -32,6 +33,12 @@ public:
     // Writes every slot's chord to one file, each starting at its own cumulative one-measure
     // offset (slots[0] at tick 0, slots[1] at tick kBeatsPerMeasure*kTicksPerQuarterNote, ...).
     static juce::File writeProgressionMidiFile(const std::vector<ResolvedProgressionSlot>& slots, double bpm = kFallbackBpm);
+
+    // Writes each note at its own exact startBeat/lengthBeats position (converted to ticks via
+    // kTicksPerQuarterNote - 1 beat == 1 quarter note, matching MidiEditor's own beat semantics),
+    // not quantized to a bar grid - used to drag out MidiEditor's live content exactly as edited,
+    // unlike writeProgressionMidiFile's rigid one-chord-per-bar layout.
+    static juce::File writeMidiEditorContentFile(const std::vector<MidiEditorNoteState>& notes, double bpm = kFallbackBpm);
 };
 
 }

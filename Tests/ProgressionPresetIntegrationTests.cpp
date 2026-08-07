@@ -35,8 +35,9 @@ TEST_CASE("INTEGRATION: end-to-end, exactly as AppLayout wires it - pick non-def
     REQUIRE(liveNow != nullptr);
     REQUIRE(liveNow->symbol == pickedChord.symbol);
 
-    // Step 2: user drags that ChordCard into slot 0 (degree-only, exactly like AppLayout::onChordFileDropped).
-    sequencer.setSlotDegree(0, Degree::I);
+    // Step 2: user drags that ChordCard onto the MidiEditor - exactly like AppLayout::onChordFileDropped,
+    // which resolves the degree to a chord then hands both to addChordAtBeat.
+    sequencer.addChordAtBeat(0.0, *liveNow, theory::ProgressionSlot { Degree::I, liveNow->popularityOrder });
 
     // Step 3: user clicks "Save Preset" - exactly ProgressionEditor::onButtonClick's body.
     const auto populatedSlots = sequencer.getPopulatedSlots();
@@ -78,9 +79,9 @@ TEST_CASE("INTEGRATION: end-to-end, exactly as AppLayout wires it - pick non-def
         [&browser](const theory::ProgressionSlot& slot) { return browser.resolveSlot(slot); });
     sequencer2.loadPreset(userPresets.front());
 
-    const auto reloadedSlot0Degree = sequencer2.getSlotDegree(0);
-    REQUIRE(reloadedSlot0Degree.has_value());
-    CHECK(*reloadedSlot0Degree == Degree::I);
+    const auto reloadedPopulatedSlots = sequencer2.getPopulatedSlots();
+    REQUIRE(reloadedPopulatedSlots.size() == 1);
+    CHECK(reloadedPopulatedSlots.front().degree == Degree::I);
 
     const auto* resolvedAfterKeyChange = browser.resolveSlot(userPresets.front().slots.front());
     REQUIRE(resolvedAfterKeyChange != nullptr);

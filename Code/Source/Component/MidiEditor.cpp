@@ -11,8 +11,6 @@ namespace component
 
 namespace
 {
-    constexpr double kBeatsPerBar = 4.0;
-
     constexpr int kMinMidiNote = 24;  // C1
     constexpr int kMaxMidiNote = 108; // C8 - voiceChordCloseToMiddleC always lands ~49-84,
                                        // comfortably inside this with headroom for manual edits
@@ -121,7 +119,7 @@ void MidiEditor::resized()
     refreshScrollRanges();
 }
 
-void MidiEditor::addChordAtBeat(double startBeat, const theory::Chord& chord)
+void MidiEditor::addChordAtBeat(double startBeat, const theory::Chord& chord, const theory::ProgressionSlot& sourceSlot)
 {
     const auto barIndex = std::floor(juce::jmax(0.0, startBeat) / kBeatsPerBar);
     const auto cellStart = barIndex * kBeatsPerBar;
@@ -175,11 +173,21 @@ void MidiEditor::addChordAtBeat(double startBeat, const theory::Chord& chord)
     }
 
     const auto chordId = _nextChordBlockId++;
-    _chordBlocks.push_back({ chordId, chord.readableName, resolvedStart, resolvedLength });
+    _chordBlocks.push_back({ chordId, chord.readableName, resolvedStart, resolvedLength, sourceSlot });
 
     for (const auto midiNote : theory::NoteConvertor::voiceChordCloseToMiddleC(chord))
         _notes.push_back({ midiNote, resolvedStart, resolvedLength, chordId });
 
+    refreshScrollRanges();
+    repaint();
+    notifyContentChanged();
+}
+
+void MidiEditor::clear()
+{
+    _notes.clear();
+    _chordBlocks.clear();
+    _nextChordBlockId = 0;
     refreshScrollRanges();
     repaint();
 }
@@ -219,6 +227,47 @@ std::optional<double> MidiEditor::getChordBlockLengthBeats(int index) const
     return effectiveChordBlockLength(_chordBlocks[static_cast<std::size_t>(index)]);
 }
 
+std::optional<theory::ProgressionSlot> MidiEditor::getChordBlockSlot(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(_chordBlocks.size()))
+        return std::nullopt;
+    return _chordBlocks[static_cast<std::size_t>(index)].sourceSlot;
+}
+
+theory::MidiEditorState MidiEditor::getState() const
+{
+    theory::MidiEditorState state;
+    state.nextChordBlockId = _nextChordBlockId;
+
+    state.notes.reserve(_notes.size());
+    for (const auto& note : _notes)
+        state.notes.push_back({ note.midiNote, note.startBeat, note.lengthBeats, note.sourceChordId });
+
+    state.chordBlocks.reserve(_chordBlocks.size());
+    for (const auto& block : _chordBlocks)
+        state.chordBlocks.push_back({ block.id, block.label, block.startBeat, block.lengthBeats, block.sourceSlot });
+
+    return state;
+}
+
+void MidiEditor::restoreState(const theory::MidiEditorState& state)
+{
+    _notes.clear();
+    _notes.reserve(state.notes.size());
+    for (const auto& note : state.notes)
+        _notes.push_back({ note.midiNote, note.startBeat, note.lengthBeats, note.sourceChordId });
+
+    _chordBlocks.clear();
+    _chordBlocks.reserve(state.chordBlocks.size());
+    for (const auto& block : state.chordBlocks)
+        _chordBlocks.push_back({ block.id, block.label, block.startBeat, block.lengthBeats, block.sourceSlot });
+
+    _nextChordBlockId = state.nextChordBlockId;
+
+    refreshScrollRanges();
+    repaint();
+}
+
 void MidiEditor::addListener(Listener* listener)
 {
     _listeners.push_back(listener);
@@ -227,6 +276,12 @@ void MidiEditor::addListener(Listener* listener)
 void MidiEditor::removeListener(Listener* listener)
 {
     _listeners.erase(std::remove(_listeners.begin(), _listeners.end(), listener), _listeners.end());
+}
+
+void MidiEditor::notifyContentChanged()
+{
+    for (auto* listener : _listeners)
+        listener->onContentChanged();
 }
 
 bool MidiEditor::isInterestedInFileDrag(const juce::StringArray& files)
@@ -332,12 +387,17 @@ void MidiEditor::mouseDrag(const juce::MouseEvent& event)
 
 void MidiEditor::mouseUp(const juce::MouseEvent&)
 {
+    const auto didDrag = _dragMode != DragMode::None;
+
     stopTimer();
     _dragMode = DragMode::None;
     _draggedNoteIndex = -1;
     _draggedChordIndex = -1;
     refreshScrollRanges();
     repaint();
+
+    if (didDrag)
+        notifyContentChanged();
 }
 
 void MidiEditor::mouseDoubleClick(const juce::MouseEvent& event)
@@ -349,6 +409,7 @@ void MidiEditor::mouseDoubleClick(const juce::MouseEvent& event)
         _hoveredNoteIndex = -1;
         refreshScrollRanges();
         repaint();
+        notifyContentChanged();
         return;
     }
 
@@ -358,6 +419,7 @@ void MidiEditor::mouseDoubleClick(const juce::MouseEvent& event)
         _chordBlocks.erase(_chordBlocks.begin() + chordIndex);
         refreshScrollRanges();
         repaint();
+        notifyContentChanged();
         return;
     }
 
@@ -367,6 +429,7 @@ void MidiEditor::mouseDoubleClick(const juce::MouseEvent& event)
     _notes.push_back({ yToPitch(event.position.y), juce::jmax(0.0, snapBeat(xToBeat(event.position.x))), kDefaultNoteLengthBeats, -1 });
     refreshScrollRanges();
     repaint();
+    notifyContentChanged();
 }
 
 void MidiEditor::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
@@ -509,7 +572,7 @@ void MidiEditor::paintNotes(juce::Graphics& g) const
             || bounds.getRight() < _contentArea.getX() || bounds.getX() > _contentArea.getRight())
             continue;
 
-        g.setColour(accent.withAlpha(0.2f));
+        g.setColour(accent.withAlpha(.6f));
         g.fillRoundedRectangle(bounds, 3.f);
 
         if (i == _hoveredNoteIndex && _hoveredIsResizeZone)

@@ -4,7 +4,6 @@
 #include "Theory/ChordDatabase.h"
 #include "Theory/MidiExporter.h"
 #include "Theory/NoteConvertor.h"
-#include "Theory/ResolvedProgressionSlot.h"
 #include "Theory/SessionStateSerializer.h"
 
 AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProcessor& audioProcessor):
@@ -248,36 +247,24 @@ void AppLayout::onChordFileDropped(double startBeat, const juce::String& filePat
         return;
 
     if (const auto* chord = _chordBrowser.resolveSlot(theory::ProgressionSlot { it->second, 0 }))
-        _progressionEditor.addChordAtBeat(startBeat, *chord);
+        _progressionEditor.addChordAtBeat(startBeat, *chord, theory::ProgressionSlot { it->second, chord->popularityOrder });
 
     _inFlightChordDrags.erase(it);
 }
 
 void AppLayout::onProgressionDragStarted()
 {
-    const auto populatedSlots = _progressionEditor.getPopulatedSlots();
-    if (populatedSlots.empty())
+    const auto state = _progressionEditor.getMidiEditorState();
+    if (state.notes.empty())
         return;
 
-    std::vector<theory::ResolvedProgressionSlot> resolvedSlots;
-    resolvedSlots.reserve(populatedSlots.size());
-
-    for (const auto& slot : populatedSlots)
-    {
-        if (const auto* chord = _chordBrowser.resolveSlot(slot))
-            resolvedSlots.push_back(theory::ResolvedProgressionSlot { slot, *chord });
-    }
-
-    if (resolvedSlots.empty())
-        return;
-
-    const auto midiFile = theory::MidiExporter::writeProgressionMidiFile(resolvedSlots);
+    const auto midiFile = theory::MidiExporter::writeMidiEditorContentFile(state.notes);
 
     if (auto* dragContainer = findParentComponentOfClass<juce::DragAndDropContainer>())
         dragContainer->performExternalDragDropOfFiles({ midiFile.getFullPathName() }, false);
 }
 
-void AppLayout::onSlotsChanged()
+void AppLayout::onContentChanged()
 {
     syncStateToValueTree();
 }
@@ -297,11 +284,7 @@ void AppLayout::syncStateToValueTree()
             state.degreeVoicings.emplace_back(degreeData.degree, chord->symbol);
     }
 
-    for (int i = 0; i < _progressionEditor.getSlotCount(); ++i)
-    {
-        if (const auto degree = _progressionEditor.getSlotDegree(i))
-            state.progressionSlots.emplace_back(i, *degree);
-    }
+    state.progressionEditorState = _progressionEditor.getMidiEditorState();
 
     auto rootState = _parameterManager.getState().state;
     rootState.removeChild(rootState.getChildWithName(theory::SessionStateSerializer::kStateTag), nullptr);
@@ -323,6 +306,5 @@ void AppLayout::restoreStateFromValueTree()
     for (const auto& [degree, chordSymbol] : state.degreeVoicings)
         _chordBrowser.setDegreeVoicing(degree, chordSymbol);
 
-    for (const auto& [index, degree] : state.progressionSlots)
-        _progressionEditor.setSlotDegree(index, degree);
+    _progressionEditor.restoreMidiEditorState(state.progressionEditorState);
 }

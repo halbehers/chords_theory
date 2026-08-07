@@ -91,4 +91,27 @@ juce::File MidiExporter::writeProgressionMidiFile(const std::vector<ResolvedProg
     return writeSequenceToFreshTempFile(sequence);
 }
 
+juce::File MidiExporter::writeMidiEditorContentFile(const std::vector<MidiEditorNoteState>& notes, double bpm)
+{
+    juce::MidiMessageSequence sequence;
+
+    addTempoAndTimeSignature(sequence, bpm);
+
+    for (const auto& note : notes)
+    {
+        const auto startTick = note.startBeat * kTicksPerQuarterNote;
+        const auto endTick = (note.startBeat + note.lengthBeats) * kTicksPerQuarterNote;
+
+        auto noteOn = juce::MidiMessage::noteOn(1, note.midiNote, kVelocity);
+        noteOn.setTimeStamp(startTick);
+        sequence.addEvent(noteOn);
+
+        auto noteOff = juce::MidiMessage::noteOff(1, note.midiNote);
+        noteOff.setTimeStamp(endTick);
+        sequence.addEvent(noteOff);
+    }
+
+    return writeSequenceToFreshTempFile(sequence);
+}
+
 }
