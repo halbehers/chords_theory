@@ -1,12 +1,14 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include "Audio/ProgressionPlayer.h"
 #include "Component/MidiEditor.h"
 #include "Theory/ChordDatabase.h"
 #include "Theory/MidiEditorState.h"
 #include "Theory/NoteConvertor.h"
 #include "Theory/ProgressionSlot.h"
 
+using audio::ProgressionPlayer;
 using component::MidiEditor;
 using theory::Chord;
 using theory::ChordDatabase;
@@ -57,6 +59,8 @@ namespace
         int droppedCount = 0;
         double lastDroppedBeat = -1.0;
         int contentChangedCount = 0;
+        int playbackStateChangedCount = 0;
+        bool lastPlaybackState = false;
 
         void onChordFileDropped(double startBeat, const juce::String&) override
         {
@@ -65,6 +69,12 @@ namespace
         }
 
         void onContentChanged() override { ++contentChangedCount; }
+
+        void onPlaybackStateChanged(bool isPlaying) override
+        {
+            ++playbackStateChangedCount;
+            lastPlaybackState = isPlaying;
+        }
     };
 
     const Chord& getTestChord()
@@ -349,4 +359,115 @@ TEST_CASE("MidiEditor::onContentChanged fires on add/move/resize/delete but not 
     CHECK(listener.contentChangedCount == 3);
 
     editor.removeListener(&listener);
+}
+
+TEST_CASE("MidiEditor: loop bounds auto-compute to the first/last note's bar boundaries", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord())); // bar 0: [0,4)
+
+    // A manually-added note past that, at beat 6 (bar 1's territory: [4,8)), 1 beat long by
+    // default - the loop must stretch to cover it too. (Kept within the 800px-wide test bounds'
+    // visible content area - mouseDoubleClick silently no-ops outside _contentArea.)
+    const juce::Point<float> pos { beatToX(6.0), pitchToY(60) + 1.f };
+    editor.mouseDoubleClick(makeMouseEvent(editor, pos));
+
+    CHECK(editor.getLoopStartBeat() == Catch::Approx(0.0));
+    CHECK(editor.getLoopEndBeat() == Catch::Approx(8.0)); // ceil(7/4)*4
+}
+
+TEST_CASE("MidiEditor: a manually-resized loop no longer moves when content changes", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord())); // loop auto-tracks to [0,4)
+    REQUIRE(editor.getLoopEndBeat() == Catch::Approx(4.0));
+
+    // Drag the loop's end handle (in the ruler band, y within [0,kRulerHeight]) one beat later.
+    const auto handleX = beatToX(4.0);
+    const juce::Point<float> start { handleX, 10.f };
+    const juce::Point<float> dragged { handleX + kPixelsPerBeat, 10.f };
+    editor.mouseDown(makeMouseEvent(editor, start));
+    editor.mouseDrag(makeMouseEvent(editor, dragged));
+    editor.mouseUp(makeMouseEvent(editor, dragged));
+
+    REQUIRE(editor.getLoopEndBeat() == Catch::Approx(5.0));
+
+    // Adding a chord far enough out that auto-tracking (if it were still active) would expand the
+    // loop to bar 4 ([12,16)) - the manual resize must have opted out of that.
+    editor.addChordAtBeat(3.0 * kBeatsPerBar, getTestChord(), testSlot(getTestChord()));
+
+    CHECK(editor.getLoopStartBeat() == Catch::Approx(0.0));
+    CHECK(editor.getLoopEndBeat() == Catch::Approx(5.0));
+}
+
+TEST_CASE("MidiEditor::startPlayback on an empty editor is a no-op", "[MidiEditor]")
+{
+    ProgressionPlayer player;
+    MidiEditor editor("test-midi-editor", &player);
+    editor.setBounds(0, 0, 800, 400);
+
+    REQUIRE(editor.getNoteCount() == 0);
+
+    editor.startPlayback();
+
+    CHECK_FALSE(editor.isPlaying());
+    CHECK_FALSE(player.isPlaying());
+}
+
+TEST_CASE("MidiEditor::onPlaybackStateChanged fires on start and stop", "[MidiEditor]")
+{
+    ProgressionPlayer player;
+    MidiEditor editor("test-midi-editor", &player);
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+
+    RecordingListener listener;
+    editor.addListener(&listener);
+
+    editor.startPlayback();
+    CHECK(editor.isPlaying());
+    CHECK(listener.playbackStateChangedCount == 1);
+    CHECK(listener.lastPlaybackState == true);
+
+    editor.stopPlayback();
+    CHECK_FALSE(editor.isPlaying());
+    CHECK(listener.playbackStateChangedCount == 2);
+    CHECK(listener.lastPlaybackState == false);
+
+    editor.removeListener(&listener);
+}
+
+TEST_CASE("MidiEditor: double-clicking the ruler zooms/scrolls so the loop exactly fills the visible width, without creating a note", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord())); // loop auto-tracks to [0,4)
+    REQUIRE(editor.getLoopStartBeat() == Catch::Approx(0.0));
+    REQUIRE(editor.getLoopEndBeat() == Catch::Approx(4.0));
+
+    const auto noteCountBefore = editor.getNoteCount();
+
+    // Double-clicking the ruler (y within [0,kRulerHeight]) must not fall through to the
+    // empty-space "add a note" behavior.
+    const juce::Point<float> rulerPos { 300.f, 10.f };
+    editor.mouseDoubleClick(makeMouseEvent(editor, rulerPos));
+    CHECK(editor.getNoteCount() == noteCountBefore);
+
+    // The content area is 800 - kGutterWidth - kScrollbarThickness = 752px wide; zoomed to exactly
+    // fit the 4-beat loop, that's 188px/beat. Double-clicking the middle of the chord block's own
+    // bar (beat 2, now at x = kGutterWidth + 2*188 = 416) in the chord lane must hit and delete it
+    // - at the old default zoom (80px/beat) that same screen x would land around beat 4.7, well
+    // outside the block, so this only passes if the zoom genuinely took effect.
+    constexpr float kExpectedPixelsPerBeat = (800.f - kGutterWidth - kScrollbarThickness) / 4.f;
+    const auto chordLaneY = 400.f - kScrollbarThickness - kChordLaneHeight + 4.f;
+    const juce::Point<float> midBarPos { kGutterWidth + 2.f * kExpectedPixelsPerBeat, chordLaneY };
+    editor.mouseDoubleClick(makeMouseEvent(editor, midBarPos));
+
+    CHECK(editor.getChordBlockCount() == 0);
 }

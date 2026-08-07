@@ -5,6 +5,7 @@
 
 #include <nierika_dsp/nierika_dsp.h>
 
+#include "Audio/ProgressionPlayer.h"
 #include "Theory/Chord.h"
 #include "Theory/MidiEditorState.h"
 #include "Theory/ProgressionSlot.h"
@@ -48,13 +49,21 @@ public:
         // completed gesture, not continuously mid-drag. Default no-op so listeners that don't care
         // (there's only ever one method to implement otherwise) aren't forced to override it.
         virtual void onContentChanged() {}
+
+        // Fired whenever playback starts/stops - both user-initiated (the play/pause button) and
+        // internally forced (clear()/restoreState() stop playback first, since either can swap out
+        // the very notes a playing loop was referencing). Default no-op, same convention as
+        // onContentChanged.
+        virtual void onPlaybackStateChanged(bool isPlaying) { juce::ignoreUnused(isPlaying); }
     };
 
     // Exposed so callers spacing consecutive chords/presets one bar apart (see
     // ProgressionEditor::loadPreset) don't need to hardcode the bar length themselves.
     static constexpr double kBeatsPerBar = 4.0;
 
-    explicit MidiEditor(const std::string& identifier);
+    // progressionPlayer is nullable (defaults to null so existing/test-only construction with just
+    // an identifier keeps working) - every playback code path below is a safe no-op when null.
+    explicit MidiEditor(const std::string& identifier, audio::ProgressionPlayer* progressionPlayer = nullptr);
     ~MidiEditor() override;
 
     void paint(juce::Graphics&) override;
@@ -90,6 +99,16 @@ public:
     // Listener::onContentChanged (it's an inbound sync, not a user-initiated change).
     [[nodiscard]] theory::MidiEditorState getState() const;
     void restoreState(const theory::MidiEditorState& state);
+
+    // No-op if there's no progressionPlayer or no notes to play. Loop bounds are auto-computed
+    // from content (the bar containing the first note to the bar containing the last) unless the
+    // user has already manually resized the loop this "editing session" - see the loop-region
+    // members below.
+    void startPlayback();
+    void stopPlayback();
+    [[nodiscard]] bool isPlaying() const;
+    [[nodiscard]] double getLoopStartBeat() const { return _loopStartBeat; }
+    [[nodiscard]] double getLoopEndBeat() const { return _loopEndBeat; }
 
     void addListener(Listener* listener);
     void removeListener(Listener* listener);
@@ -133,9 +152,9 @@ private:
                                              // popularityOrder; never re-resolved live afterward
     };
 
-    enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, MoveChordBlock };
+    enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, MoveChordBlock, ResizeLoopStart, ResizeLoopEnd };
 
-    void timerCallback() override; // drag-triggered auto-scroll only
+    void timerCallback() override; // drag-triggered auto-scroll, and while playing, playhead repaint
 
     // paint helpers
     void paintGridlines(juce::Graphics&) const;
@@ -143,6 +162,8 @@ private:
     void paintNotes(juce::Graphics&) const;
     void paintRuler(juce::Graphics&) const;
     void paintGutter(juce::Graphics&) const;
+    void paintLoopRegion(juce::Graphics&) const;
+    void paintPlayhead(juce::Graphics&) const;
 
     // coordinate math
     [[nodiscard]] float beatToX(double beat) const noexcept;
@@ -155,6 +176,7 @@ private:
     [[nodiscard]] int hitTestNote(juce::Point<float>) const;
     [[nodiscard]] int hitTestChordBlock(juce::Point<float>) const;
     [[nodiscard]] bool isInNoteResizeZone(int noteIndex, juce::Point<float>, bool leftEdge) const;
+    [[nodiscard]] bool isInLoopHandleZone(juce::Point<float>, bool startHandle) const;
 
     // A chord-lane block visually/logically stays exactly as long as the longest of the notes that
     // still carry its id (falls back to its own stored lengthBeats if none remain, e.g. every note
@@ -169,11 +191,19 @@ private:
 
     void notifyContentChanged();
 
+    // Recomputes _loopStartBeat/_loopEndBeat from the current note content (a no-op if
+    // _loopManuallyAdjusted or there are no notes) - called from notifyContentChanged.
+    void recomputeLoopBoundsFromContent();
+
     // scroll/zoom
     void refreshScrollRanges();
     void zoomHorizontal(float amount, juce::Point<float> anchor);
     void zoomVertical(float amount, juce::Point<float> anchor);
     void updateScrollBarVisibility();
+
+    // Horizontally zooms/scrolls so the current loop region exactly fills the visible content
+    // width - triggered by double-clicking the ruler.
+    void zoomToLoop();
 
     std::vector<MidiNoteBlock> _notes;
     std::vector<ChordBlockData> _chordBlocks;
@@ -202,6 +232,11 @@ private:
     bool _hoveredIsResizeZone = false;
     bool _hoveredResizeIsLeftEdge = false;
     bool _isHovering = false;
+
+    audio::ProgressionPlayer* _progressionPlayer = nullptr;
+    double _loopStartBeat = 0.0;
+    double _loopEndBeat = kBeatsPerBar;
+    bool _loopManuallyAdjusted = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiEditor)
 };

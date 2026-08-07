@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 
 #include "Theory/NoteConvertor.h"
 
@@ -42,8 +43,9 @@ namespace
     const std::array<juce::String, 12> kNoteNames { "C","C#","D","D#","E","F","F#","G","G#","A","A#","B" };
 }
 
-MidiEditor::MidiEditor(const std::string& identifier):
-    Component(identifier)
+MidiEditor::MidiEditor(const std::string& identifier, audio::ProgressionPlayer* progressionPlayer):
+    Component(identifier),
+    _progressionPlayer(progressionPlayer)
 {
     displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
     displayBorder(nui::Theme::ThemeColor::BORDER, 1.f, nui::Theme::getBorderRadius(), 1.f);
@@ -68,6 +70,12 @@ MidiEditor::MidiEditor(const std::string& identifier):
 
 MidiEditor::~MidiEditor()
 {
+    // Playback lives on ChordSynthEngine (owned by the audio processor, outliving this editor
+    // Component) - without this, closing the editor while a progression is playing would leave it
+    // looping forever with no way left to stop it.
+    if (_progressionPlayer != nullptr)
+        _progressionPlayer->stop();
+
     _hScrollBar.removeListener(this);
     _vScrollBar.removeListener(this);
 }
@@ -98,6 +106,13 @@ void MidiEditor::paint(juce::Graphics& g)
 
     paintRuler(g);
     paintGutter(g);
+
+    // Both drawn last, fully on top (low-alpha fills so notes/gridlines/ruler stay legible
+    // underneath) - the loop region's ruler-band highlight needs to sit over paintRuler's own
+    // opaque fill to be visible at all, and the playhead is a transport cursor, conventionally
+    // always drawn on top of everything else.
+    paintLoopRegion(g);
+    paintPlayhead(g);
 }
 
 void MidiEditor::resized()
@@ -185,9 +200,14 @@ void MidiEditor::addChordAtBeat(double startBeat, const theory::Chord& chord, co
 
 void MidiEditor::clear()
 {
+    stopPlayback();
+
     _notes.clear();
     _chordBlocks.clear();
     _nextChordBlockId = 0;
+    _loopStartBeat = 0.0;
+    _loopEndBeat = kBeatsPerBar;
+    _loopManuallyAdjusted = false;
     refreshScrollRanges();
     repaint();
 }
@@ -252,6 +272,9 @@ theory::MidiEditorState MidiEditor::getState() const
 
 void MidiEditor::restoreState(const theory::MidiEditorState& state)
 {
+    stopPlayback();
+    _loopManuallyAdjusted = false;
+
     _notes.clear();
     _notes.reserve(state.notes.size());
     for (const auto& note : state.notes)
@@ -264,8 +287,53 @@ void MidiEditor::restoreState(const theory::MidiEditorState& state)
 
     _nextChordBlockId = state.nextChordBlockId;
 
+    recomputeLoopBoundsFromContent();
     refreshScrollRanges();
     repaint();
+}
+
+void MidiEditor::startPlayback()
+{
+    if (_progressionPlayer == nullptr || _notes.empty() || _progressionPlayer->isPlaying())
+        return;
+
+    std::vector<audio::ScheduledNote> scheduledNotes;
+    scheduledNotes.reserve(_notes.size());
+    for (const auto& note : _notes)
+        scheduledNotes.push_back({ note.midiNote, note.startBeat, note.lengthBeats });
+
+    _progressionPlayer->setNotes(scheduledNotes);
+    _progressionPlayer->setLoopBounds(_loopStartBeat, _loopEndBeat);
+    _progressionPlayer->play();
+
+    if (!isTimerRunning())
+        startTimerHz(45);
+
+    repaint();
+
+    for (auto* listener : _listeners)
+        listener->onPlaybackStateChanged(true);
+}
+
+void MidiEditor::stopPlayback()
+{
+    if (_progressionPlayer == nullptr || !_progressionPlayer->isPlaying())
+        return;
+
+    _progressionPlayer->stop();
+
+    if (_dragMode == DragMode::None)
+        stopTimer();
+
+    repaint();
+
+    for (auto* listener : _listeners)
+        listener->onPlaybackStateChanged(false);
+}
+
+bool MidiEditor::isPlaying() const
+{
+    return _progressionPlayer != nullptr && _progressionPlayer->isPlaying();
 }
 
 void MidiEditor::addListener(Listener* listener)
@@ -280,8 +348,39 @@ void MidiEditor::removeListener(Listener* listener)
 
 void MidiEditor::notifyContentChanged()
 {
+    recomputeLoopBoundsFromContent();
+
+    // Keep a playing loop in sync with live edits - audible on the next pass rather than stale.
+    if (_progressionPlayer != nullptr && _progressionPlayer->isPlaying())
+    {
+        std::vector<audio::ScheduledNote> scheduledNotes;
+        scheduledNotes.reserve(_notes.size());
+        for (const auto& note : _notes)
+            scheduledNotes.push_back({ note.midiNote, note.startBeat, note.lengthBeats });
+
+        _progressionPlayer->setNotes(scheduledNotes);
+        _progressionPlayer->setLoopBounds(_loopStartBeat, _loopEndBeat);
+    }
+
     for (auto* listener : _listeners)
         listener->onContentChanged();
+}
+
+void MidiEditor::recomputeLoopBoundsFromContent()
+{
+    if (_loopManuallyAdjusted || _notes.empty())
+        return;
+
+    auto minStart = std::numeric_limits<double>::max();
+    auto maxEnd = 0.0;
+    for (const auto& note : _notes)
+    {
+        minStart = juce::jmin(minStart, note.startBeat);
+        maxEnd = juce::jmax(maxEnd, note.startBeat + note.lengthBeats);
+    }
+
+    _loopStartBeat = std::floor(minStart / kBeatsPerBar) * kBeatsPerBar;
+    _loopEndBeat = std::ceil(maxEnd / kBeatsPerBar) * kBeatsPerBar;
 }
 
 bool MidiEditor::isInterestedInFileDrag(const juce::StringArray& files)
@@ -347,6 +446,21 @@ void MidiEditor::mouseDown(const juce::MouseEvent& event)
     _dragStartMouse = event.position;
     _lastMousePosition = event.position;
 
+    if (isInLoopHandleZone(event.position, true))
+    {
+        _dragMode = DragMode::ResizeLoopStart;
+        _dragStartBeat = _loopStartBeat;
+        startTimerHz(45);
+        return;
+    }
+    if (isInLoopHandleZone(event.position, false))
+    {
+        _dragMode = DragMode::ResizeLoopEnd;
+        _dragStartBeat = _loopEndBeat;
+        startTimerHz(45);
+        return;
+    }
+
     const auto noteIndex = hitTestNote(event.position);
     if (noteIndex >= 0)
     {
@@ -387,21 +501,41 @@ void MidiEditor::mouseDrag(const juce::MouseEvent& event)
 
 void MidiEditor::mouseUp(const juce::MouseEvent&)
 {
-    const auto didDrag = _dragMode != DragMode::None;
+    const auto finishedDragMode = _dragMode;
+    const auto didDrag = finishedDragMode != DragMode::None;
 
-    stopTimer();
     _dragMode = DragMode::None;
     _draggedNoteIndex = -1;
     _draggedChordIndex = -1;
+
+    // The timer is now shared with playback repaint (see timerCallback) - only stop it here if
+    // nothing else still needs it running.
+    if (!isPlaying())
+        stopTimer();
+
     refreshScrollRanges();
     repaint();
 
-    if (didDrag)
+    if (finishedDragMode == DragMode::ResizeLoopStart || finishedDragMode == DragMode::ResizeLoopEnd)
+    {
+        _loopManuallyAdjusted = true;
+        if (_progressionPlayer != nullptr)
+            _progressionPlayer->setLoopBounds(_loopStartBeat, _loopEndBeat);
+    }
+    else if (didDrag)
+    {
         notifyContentChanged();
+    }
 }
 
 void MidiEditor::mouseDoubleClick(const juce::MouseEvent& event)
 {
+    if (event.position.y >= 0.f && event.position.y <= kRulerHeight)
+    {
+        zoomToLoop();
+        return;
+    }
+
     const auto noteIndex = hitTestNote(event.position);
     if (noteIndex >= 0)
     {
@@ -473,14 +607,21 @@ void MidiEditor::timerCallback()
     constexpr float kEdgeMargin = 24.f;
 
     if (_dragMode == DragMode::None)
+    {
+        // No drag in progress - the timer can only still be running because playback is active
+        // (see startPlayback/stopPlayback), so its only job here is to keep the playhead's visual
+        // position in sync with the audio thread's actual position.
+        if (isPlaying())
+            repaint();
         return;
+    }
 
     if (_lastMousePosition.x < _contentArea.getX() + kEdgeMargin)
         _scrollBeat = juce::jmax(0.0, _scrollBeat - 0.15);
     else if (_lastMousePosition.x > _contentArea.getRight() - kEdgeMargin)
         _scrollBeat += 0.15;
 
-    if (_dragMode != DragMode::MoveChordBlock)
+    if (_dragMode != DragMode::MoveChordBlock && _dragMode != DragMode::ResizeLoopStart && _dragMode != DragMode::ResizeLoopEnd)
     {
         if (_lastMousePosition.y < _contentArea.getY() + kEdgeMargin)
             _scrollRow = juce::jmax(0.f, _scrollRow - 0.3f);
@@ -680,6 +821,58 @@ void MidiEditor::paintGutter(juce::Graphics& g) const
     }
 }
 
+void MidiEditor::paintLoopRegion(juce::Graphics& g) const
+{
+    const auto x0 = beatToX(_loopStartBeat);
+    const auto x1 = beatToX(_loopEndBeat);
+    const auto width = static_cast<float>(getWidth());
+    if (x1 < kGutterWidth || x0 > width)
+        return; // entirely scrolled off-screen
+
+    const auto accent = nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce();
+    const auto visibleX0 = juce::jmax(x0, kGutterWidth);
+    const auto visibleX1 = juce::jmin(x1, width);
+
+    // Low-alpha so the ruler/gridlines/notes underneath stay fully legible - the ruler-band strip
+    // needs to sit over paintRuler's own opaque fill (this is drawn later, in the "on top" tier) to
+    // be visible at all; the fainter content/chord-lane band just needs to read as "this is the
+    // loop's extent" without competing with the notes for attention.
+    g.setColour(accent.withAlpha(0.2f));
+    g.fillRect(juce::Rectangle<float>(visibleX0, 0.f, visibleX1 - visibleX0, kRulerHeight));
+
+    g.setColour(accent.withAlpha(0.08f));
+    g.fillRect(juce::Rectangle<float>(visibleX0, _contentArea.getY(), visibleX1 - visibleX0, static_cast<float>(getHeight()) - _contentArea.getY()));
+
+    constexpr float kHandleWidth = 4.f;
+    g.setColour(accent);
+    if (x0 >= kGutterWidth && x0 <= width)
+        g.fillRect(juce::Rectangle<float>(x0 - kHandleWidth * 0.5f, 0.f, kHandleWidth, kRulerHeight));
+    if (x1 >= kGutterWidth && x1 <= width)
+        g.fillRect(juce::Rectangle<float>(x1 - kHandleWidth * 0.5f, 0.f, kHandleWidth, kRulerHeight));
+}
+
+void MidiEditor::paintPlayhead(juce::Graphics& g) const
+{
+    // Only once there's (or has been) real content to loop over - an untouched, contentless editor
+    // has no meaningful playhead position to show.
+    if (_notes.empty() && !_loopManuallyAdjusted)
+        return;
+
+    const auto playing = _progressionPlayer != nullptr && _progressionPlayer->isPlaying();
+    const auto playheadBeat = playing ? _progressionPlayer->getPlayheadBeat() : _loopStartBeat;
+    const auto x = beatToX(playheadBeat);
+    const auto width = static_cast<float>(getWidth());
+    if (x < kGutterWidth || x > width)
+        return;
+
+    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::TEXT).asJuce());
+    g.drawVerticalLine(static_cast<int>(x), 0.f, static_cast<float>(getHeight()));
+
+    juce::Path flag;
+    flag.addTriangle(x - 4.f, 0.f, x + 4.f, 0.f, x, 8.f);
+    g.fillPath(flag);
+}
+
 double MidiEditor::effectiveChordBlockLength(const ChordBlockData& block) const
 {
     auto maxLength = 0.0;
@@ -771,6 +964,17 @@ bool MidiEditor::isInNoteResizeZone(int noteIndex, juce::Point<float> position, 
     return position.x >= edge - kResizeHandleWidth && position.x <= edge;
 }
 
+bool MidiEditor::isInLoopHandleZone(juce::Point<float> position, bool startHandle) const
+{
+    if (position.y < 0.f || position.y > kRulerHeight)
+        return false;
+
+    // Symmetric around the edge (unlike a note's resize zone, which extends only into its own
+    // body) - a loop handle has no "inside" it belongs to more than the other side.
+    const auto edge = beatToX(startHandle ? _loopStartBeat : _loopEndBeat);
+    return position.x >= edge - kResizeHandleWidth && position.x <= edge + kResizeHandleWidth;
+}
+
 void MidiEditor::applyDragAt(juce::Point<float> position)
 {
     if (_dragMode == DragMode::None)
@@ -811,6 +1015,20 @@ void MidiEditor::applyDragAt(juce::Point<float> position)
         auto& block = _chordBlocks[static_cast<std::size_t>(_draggedChordIndex)];
         const auto rawStart = _dragStartBeat + deltaBeats;
         block.startBeat = juce::jmax(0.0, snap ? snapBeat(rawStart) : rawStart);
+        repaint();
+    }
+    else if (_dragMode == DragMode::ResizeLoopStart)
+    {
+        const auto rawStart = _dragStartBeat + deltaBeats;
+        const auto snappedStart = snap ? snapBeat(rawStart) : rawStart;
+        _loopStartBeat = juce::jlimit(0.0, _loopEndBeat - kSnapBeats, snappedStart); // can't pass beat 0, or the loop end
+        repaint();
+    }
+    else if (_dragMode == DragMode::ResizeLoopEnd)
+    {
+        const auto rawEnd = _dragStartBeat + deltaBeats;
+        const auto snappedEnd = snap ? snapBeat(rawEnd) : rawEnd;
+        _loopEndBeat = juce::jmax(_loopStartBeat + kSnapBeats, snappedEnd); // no upper bound
         repaint();
     }
 }
@@ -886,6 +1104,19 @@ void MidiEditor::zoomVertical(float factor, juce::Point<float> anchor)
     const auto anchorRow = _scrollRow + (anchor.y - kRulerHeight) / _rowHeight;
     _rowHeight = juce::jlimit(kMinRowHeight, kMaxRowHeight, _rowHeight * factor);
     _scrollRow = juce::jmax(0.f, anchorRow - (anchor.y - kRulerHeight) / _rowHeight);
+    refreshScrollRanges();
+    repaint();
+}
+
+void MidiEditor::zoomToLoop()
+{
+    const auto loopLengthBeats = _loopEndBeat - _loopStartBeat;
+    if (loopLengthBeats <= 0.0 || _contentArea.getWidth() <= 0.f)
+        return;
+
+    _pixelsPerBeat = juce::jlimit(kMinPixelsPerBeat, kMaxPixelsPerBeat, _contentArea.getWidth() / static_cast<float>(loopLengthBeats));
+    _scrollBeat = _loopStartBeat;
+
     refreshScrollRanges();
     repaint();
 }

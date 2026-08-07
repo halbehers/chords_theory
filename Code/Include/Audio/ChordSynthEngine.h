@@ -8,6 +8,7 @@
 
 #include "Audio/MasterBus.h"
 #include "Audio/MasterBusState.h"
+#include "Audio/ProgressionPlayer.h"
 #include "Audio/VoiceSharedState.h"
 
 namespace audio
@@ -57,6 +58,11 @@ public:
     [[nodiscard]] ndsp::SingleChannelSampleFIFO<juce::AudioBuffer<float>>& getLeftWaveformFifo() { return _leftWaveformFifo; }
     [[nodiscard]] ndsp::SingleChannelSampleFIFO<juce::AudioBuffer<float>>& getRightWaveformFifo() { return _rightWaveformFifo; }
 
+    // Sample-accurate progression-loop playback (see its own class doc comment for the
+    // cross-thread contract) - MidiEditor reaches this via a raw pointer, same pattern as the
+    // waveform FIFOs above.
+    [[nodiscard]] ProgressionPlayer& getProgressionPlayer() { return _progressionPlayer; }
+
 private:
     void timerCallback() override;
     void releaseActiveNotes();
@@ -78,6 +84,7 @@ private:
     juce::MidiKeyboardState _keyboardState;
     std::vector<int> _activeNotes;
     double _sampleRate = 44100.0;
+    ProgressionPlayer _progressionPlayer;
 
     MasterBusState _masterBusState;
     MasterBus _masterBus;

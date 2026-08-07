@@ -3,16 +3,22 @@
 
 #include <string>
 
+#include "Audio/ProgressionPlayer.h"
 #include "Component/MidiEditor.h"
 #include "Component/ProgressionEditor.h"
+#include "Theory/ChordDatabase.h"
 #include "Theory/ProgressionPreset.h"
 
+using audio::ProgressionPlayer;
 using component::MidiEditor;
 using component::ProgressionEditor;
 using theory::Chord;
+using theory::ChordDatabase;
 using theory::Degree;
+using theory::Key;
 using theory::ProgressionPreset;
 using theory::ProgressionSlot;
+using theory::Scale;
 
 namespace
 {
@@ -39,6 +45,18 @@ namespace
         void onProgressionDragStarted() override {}
         void onContentChanged() override { ++contentChangedCount; }
     };
+
+    // Both nelement::SVGButton and nelement::TextButton wrap a single, always-first, internal
+    // juce::Button child that actually receives clicks - triggerClick() drives their real onClick
+    // handler without needing real mouse events or exact on-screen geometry. Same pattern as
+    // VoicingSelectorTests.cpp's own helper.
+    void triggerButtonClick(juce::Component& buttonWrapper)
+    {
+        auto* button = dynamic_cast<juce::Button*>(buttonWrapper.getChildComponent(0));
+        REQUIRE(button != nullptr);
+        button->triggerClick();
+        juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+    }
 }
 
 TEST_CASE("ProgressionEditor::loadPreset places one chord block per bar, in order", "[ProgressionEditor]")
@@ -185,4 +203,36 @@ TEST_CASE("ProgressionEditor: a MidiEditor content change bubbles up to this com
     CHECK(listener.contentChangedCount == 1);
 
     sequencer.removeListener(&listener);
+}
+
+TEST_CASE("ProgressionEditor: clicking the play button toggles playback and swaps its icon", "[ProgressionEditor]")
+{
+    ProgressionPlayer player;
+    // Needs a chord with real notes (unlike makeChord()'s bare symbol/popularityOrder stub used
+    // elsewhere in this file) - playback has nothing to play otherwise, and startPlayback() no-ops.
+    const Chord& chord = ChordDatabase::getInstance().get(Key::C, Scale::Major).degrees.front().chords.front();
+
+    ProgressionEditor sequencer("test-sequencer",
+        [](const ProgressionSlot&) -> const Chord* { return nullptr; },
+        &player);
+    sequencer.setBounds(0, 0, 800, 400);
+
+    sequencer.addChordAtBeat(0.0, chord, ProgressionSlot { Degree::I, chord.popularityOrder });
+
+    auto* playButton = dynamic_cast<nelement::SVGButton*>(sequencer.findChildWithID("progression-play-button"));
+    REQUIRE(playButton != nullptr);
+    CHECK(playButton->getIconBinary() == nui::Icons::getPlay());
+
+    auto* midiEditor = dynamic_cast<MidiEditor*>(sequencer.findChildWithID("progression-midi-editor"));
+    REQUIRE(midiEditor != nullptr);
+
+    triggerButtonClick(*playButton);
+
+    CHECK(midiEditor->isPlaying());
+    CHECK(playButton->getIconBinary() == nui::Icons::getStop());
+
+    triggerButtonClick(*playButton);
+
+    CHECK_FALSE(midiEditor->isPlaying());
+    CHECK(playButton->getIconBinary() == nui::Icons::getPlay());
 }

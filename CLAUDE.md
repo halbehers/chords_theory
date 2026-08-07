@@ -44,6 +44,15 @@ see `README.md` for exact commands (`cmake --workflow --preset default`, `ctest 
   no live caller left in the app); `writeMidiEditorContentFile` writes each note at its own exact
   `startBeat`/`lengthBeats` position (beats → ticks via `kTicksPerQuarterNote`, no quantization) -
   this is what "Drag it out" actually uses, so the exported MIDI matches the piano roll exactly.
+- `Audio::ChordSynthEngine`/`Audio::ProgressionPlayer` — the actual synth. `ChordSynthEngine` bridges
+  UI-thread "preview this chord" clicks into the audio-thread `juce::Synthesiser` via
+  `juce::MidiKeyboardState`. `ProgressionPlayer` (owned by it) is the sample-accurate loop-playback
+  scheduler behind `MidiEditor`'s play/pause button - injects real note-on/off `juce::MidiMessage`s
+  directly into the same block `ChordSynthEngine::renderNextBlock` renders, at the exact sample
+  offset each note falls on (host tempo when available, `kFallbackBpm` otherwise). Message thread
+  (`setNotes`/`setLoopBounds`/`play`/`stop`) and audio thread (`renderNextBlock`) hand off the note
+  list through a fixed-capacity, wait-free double-buffer - no allocation or locking on either side,
+  see its own class doc comment for the full cross-thread contract.
 - `ProgressionSlot`/`ProgressionPreset`/`ProgressionPresetFactory`/`BuiltInProgressionPresets` —
   presets reference degrees generically (not pinned chord types) plus an optional `popularityOrder`
   pin. `ProgressionEditor::loadPreset` resolves each slot against the live per-degree voicing (or

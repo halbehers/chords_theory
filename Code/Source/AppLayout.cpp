@@ -12,7 +12,7 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _settings("settings", nui::Icons::getGear()),
     _keyScaleSelector("key-scale-selector"),
     _chordBrowser("chord-degree-browser"),
-    _progressionEditor("progression-sequencer", [this](const theory::ProgressionSlot& slot) { return _chordBrowser.resolveSlot(slot); }),
+    _progressionEditor("progression-sequencer", [this](const theory::ProgressionSlot& slot) { return _chordBrowser.resolveSlot(slot); }, &audioProcessor.getSynthEngine().getProgressionPlayer()),
     _synthEditor(parameterManager, &audioProcessor.getSynthEngine().getLeftWaveformFifo(), &audioProcessor.getSynthEngine().getRightWaveformFifo()),
     _mainSection("main-section", parameterManager),
     _windowsManager(*this)

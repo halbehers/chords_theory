@@ -14,17 +14,21 @@ namespace
     constexpr float kHeaderRowHeight = 32.f;
 }
 
-ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolver chordResolver):
+ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolver chordResolver, audio::ProgressionPlayer* progressionPlayer):
     Component(identifier),
     _chordResolver(std::move(chordResolver)),
     _presetPicker("progression-preset-picker-wrapper"),
     _savePresetButton("progression-save-preset-button", nui::Icons::getPlus()),
-    _dragHandle("progression-drag-handle")
+    _dragHandle("progression-drag-handle"),
+    _midiEditor("progression-midi-editor", progressionPlayer)
 {
     _presetPicker.addListener(this);
 
     _savePresetButton.setIconSize(16.f);
     _savePresetButton.addOnClickListener(this);
+
+    _playButton.setIconSize(16.f);
+    _playButton.addOnClickListener(this);
 
     _dragHandle.addListener(this);
 
@@ -49,6 +53,7 @@ ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolve
     _layout.setFixedRowHeight(0, kHeaderRowHeight);
     _layout.setFixedRowHeight(1, 12.f);
 
+    _layout.addComponent(_playButton, 0, 0, 1, 1);
     _layout.addComponent(_dragHandle, 0, 2, 1, 1);
     _layout.addComponent(_presetsLabel, 0, 4, 1, 1);
     _layout.addComponent(_presetPicker, 0, 5, 1, 1);
@@ -60,6 +65,7 @@ ProgressionEditor::~ProgressionEditor()
 {
     _presetPicker.removeListener(this);
     _savePresetButton.removeListener(this);
+    _playButton.removeListener(this);
     _dragHandle.removeListener(this);
     _midiEditor.removeListener(this);
 }
@@ -152,6 +158,14 @@ void ProgressionEditor::onContentChanged()
         listener->onContentChanged();
 }
 
+void ProgressionEditor::onPlaybackStateChanged(bool isPlaying)
+{
+    // Not the click handler's job to set this directly - it needs to stay correct even when
+    // playback stops "from underneath" (e.g. clear()/restoreState() via a preset load), not just
+    // in response to this button's own click.
+    _playButton.setIconBinary(isPlaying ? nui::Icons::getStop() : nui::Icons::getPlay());
+}
+
 void ProgressionEditor::onPresetSelected(const theory::ProgressionPreset& preset)
 {
     loadPreset(preset);
@@ -165,6 +179,15 @@ void ProgressionEditor::onProgressionDragStarted()
 
 void ProgressionEditor::onButtonClick(const std::string& componentID)
 {
+    if (componentID == _playButton.getComponentID())
+    {
+        if (_midiEditor.isPlaying())
+            _midiEditor.stopPlayback();
+        else
+            _midiEditor.startPlayback();
+        return;
+    }
+
     if (componentID != _savePresetButton.getComponentID())
         return;
 

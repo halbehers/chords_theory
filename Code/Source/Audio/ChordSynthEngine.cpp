@@ -42,6 +42,8 @@ void ChordSynthEngine::renderNextBlock(juce::AudioBuffer<float>& buffer, juce::M
 
     _sharedState.hostBpm = bpm;
 
+    _progressionPlayer.renderNextBlock(midiMessages, numSamples, _sampleRate, bpm);
+
     // Advanced unconditionally, whether or not anything is currently sounding - this is what
     // makes the LFO's Free mode a genuinely continuous, globally-shared clock rather than
     // something tied to any one note (see Lfo's and VoiceSharedState's doc comments for how each
@@ -90,6 +92,7 @@ void ChordSynthEngine::reset()
 {
     stopTimer();
     releaseActiveNotes();
+    _progressionPlayer.stop();
 }
 
 void ChordSynthEngine::timerCallback()

@@ -5,6 +5,7 @@
 
 #include <nierika_dsp/nierika_dsp.h>
 
+#include "Audio/ProgressionPlayer.h"
 #include "Component/MidiEditor.h"
 #include "Component/ProgressionDragHandle.h"
 #include "Component/ProgressionPresetPicker.h"
@@ -49,7 +50,9 @@ public:
         virtual void onContentChanged() = 0;
     };
 
-    ProgressionEditor(const std::string& identifier, ChordResolver chordResolver);
+    // progressionPlayer is nullable (defaults to null so any test constructing without one keeps
+    // working) - forwarded straight into the owned MidiEditor.
+    ProgressionEditor(const std::string& identifier, ChordResolver chordResolver, audio::ProgressionPlayer* progressionPlayer = nullptr);
     ~ProgressionEditor() override;
 
     void paint(juce::Graphics&) override;
@@ -90,6 +93,7 @@ public:
 private:
     void onChordFileDropped(double startBeat, const juce::String& filePath) override;
     void onContentChanged() override;
+    void onPlaybackStateChanged(bool isPlaying) override;
     void onPresetSelected(const theory::ProgressionPreset& preset) override;
     void onProgressionDragStarted() override;
     void onButtonClick(const std::string& componentID) override;
@@ -100,9 +104,10 @@ private:
     nelement::Text _presetsLabel { "progression-presets-label" };
     ProgressionPresetPicker _presetPicker;
     nelement::SVGButton _savePresetButton;
+    nelement::SVGButton _playButton { "progression-play-button", nui::Icons::getPlay() };
 
     ProgressionDragHandle _dragHandle;
-    MidiEditor _midiEditor { "progression-midi-editor" };
+    MidiEditor _midiEditor;
 
     nlayout::GridLayout<nui::Component> _layout { *this };
 
