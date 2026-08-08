@@ -28,6 +28,9 @@ namespace
                                                      // one-bar-per-chord like MidiExporter's export
     constexpr double kSnapBeats = 0.25; // sixteenth notes at 4 beats/bar
     constexpr float kResizeHandleWidth = 7.f; // fixed screen pixels regardless of zoom
+    constexpr float kClickVsDragThreshold = 3.f; // fixed screen pixels - below this, a gesture that
+                                                   // grabbed a note/started a marquee is treated as
+                                                   // a plain click instead (see mouseUp)
 
     constexpr float kRulerTickHeight = 16.f; // bottom-aligned tick mark height within the ruler row
     constexpr float kRulerTickLabelGap = 8.f; // horizontal gap between a tick and its beat/bar label
@@ -66,6 +69,10 @@ MidiEditor::MidiEditor(const std::string& identifier, audio::ProgressionPlayer* 
     _vScrollBar.setColour(juce::ScrollBar::thumbColourId, nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce().withAlpha(0.5f));
 
     addMouseListener(this, true);
+
+    // Needed for keyPressed() (Delete/arrow-key nudge of the current selection) to ever fire -
+    // mouseDown grabs focus on every click so keyboard input reliably routes here afterward.
+    setWantsKeyboardFocus(true);
 }
 
 MidiEditor::~MidiEditor()
@@ -89,6 +96,7 @@ void MidiEditor::paint(juce::Graphics& g)
         g.reduceClipRegion(_contentArea.toNearestInt());
         paintGridlines(g);
         paintNotes(g);
+        paintMarqueeSelection(g);
     }
 
     {
@@ -177,6 +185,7 @@ void MidiEditor::addChordAtBeat(double startBeat, const theory::Chord& chord, co
         _chordBlocks.erase(_chordBlocks.begin() + fullyCoveringIndex);
         _notes.erase(std::remove_if(_notes.begin(), _notes.end(),
             [removedId](const MidiNoteBlock& note) { return note.sourceChordId == removedId; }), _notes.end());
+        _selectedNoteIndices.clear(); // indices are no longer meaningful after this bulk erase
     }
     else
     {
@@ -208,6 +217,7 @@ void MidiEditor::clear()
     _loopStartBeat = 0.0;
     _loopEndBeat = kBeatsPerBar;
     _loopManuallyAdjusted = false;
+    _selectedNoteIndices.clear();
     refreshScrollRanges();
     repaint();
 }
@@ -274,6 +284,7 @@ void MidiEditor::restoreState(const theory::MidiEditorState& state)
 {
     stopPlayback();
     _loopManuallyAdjusted = false;
+    _selectedNoteIndices.clear();
 
     _notes.clear();
     _notes.reserve(state.notes.size());
@@ -443,6 +454,13 @@ void MidiEditor::mouseMove(const juce::MouseEvent& event)
 
 void MidiEditor::mouseDown(const juce::MouseEvent& event)
 {
+    // So a subsequent Delete/arrow-key press reaches keyPressed(). Guarded on isShowing() only to
+    // avoid grabKeyboardFocus()'s own jassert in unit tests that drive mouse events without a real
+    // window/peer - always true for a real mouseDown, since JUCE only dispatches mouse events to
+    // components that are actually on screen.
+    if (isShowing())
+        grabKeyboardFocus();
+
     _dragStartMouse = event.position;
     _lastMousePosition = event.position;
 
@@ -464,8 +482,24 @@ void MidiEditor::mouseDown(const juce::MouseEvent& event)
     const auto noteIndex = hitTestNote(event.position);
     if (noteIndex >= 0)
     {
+        // Clicking a note that isn't already part of the current selection replaces the selection
+        // immediately; clicking one that already is keeps the whole multi-selection intact for a
+        // possible group-drag (mouseUp collapses it to just this note if the click turns out not
+        // to have been a drag at all - see mouseUp).
+        _mouseDownNoteWasAlreadySelected = std::find(_selectedNoteIndices.begin(), _selectedNoteIndices.end(), noteIndex) != _selectedNoteIndices.end();
+        if (!_mouseDownNoteWasAlreadySelected)
+        {
+            _selectedNoteIndices = { noteIndex };
+            repaint();
+        }
+
+        _dragStartSnapshots.clear();
+        _dragStartSnapshots.reserve(_selectedNoteIndices.size());
+        for (const auto selected : _selectedNoteIndices)
+            _dragStartSnapshots.push_back(_notes[static_cast<std::size_t>(selected)]);
+
         const auto& note = _notes[static_cast<std::size_t>(noteIndex)];
-        _draggedNoteIndex = noteIndex;
+        _draggedNoteIndex = noteIndex; // the anchor - determines resize direction for the whole selection
         if (isInNoteResizeZone(noteIndex, event.position, true))
             _dragMode = DragMode::ResizeNoteStart;
         else if (isInNoteResizeZone(noteIndex, event.position, false))
@@ -490,7 +524,11 @@ void MidiEditor::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
-    _dragMode = DragMode::None;
+    // Nothing hit - starts a rubber-band selection; mouseUp decides whether this was actually a
+    // drag (select everything the rect ends up covering) or just a plain click (deselect).
+    _dragMode = DragMode::MarqueeSelect;
+    _marqueeRect = juce::Rectangle<float>();
+    startTimerHz(45);
 }
 
 void MidiEditor::mouseDrag(const juce::MouseEvent& event)
@@ -503,10 +541,13 @@ void MidiEditor::mouseUp(const juce::MouseEvent&)
 {
     const auto finishedDragMode = _dragMode;
     const auto didDrag = finishedDragMode != DragMode::None;
+    const auto finishedNoteIndex = _draggedNoteIndex;
+    const auto mouseActuallyMoved = _dragStartMouse.getDistanceFrom(_lastMousePosition) > kClickVsDragThreshold;
 
     _dragMode = DragMode::None;
     _draggedNoteIndex = -1;
     _draggedChordIndex = -1;
+    _dragStartSnapshots.clear();
 
     // The timer is now shared with playback repaint (see timerCallback) - only stop it here if
     // nothing else still needs it running.
@@ -522,8 +563,42 @@ void MidiEditor::mouseUp(const juce::MouseEvent&)
         if (_progressionPlayer != nullptr)
             _progressionPlayer->setLoopBounds(_loopStartBeat, _loopEndBeat);
     }
+    else if (finishedDragMode == DragMode::MarqueeSelect)
+    {
+        const auto isTrivialClick = _marqueeRect.getWidth() < kClickVsDragThreshold && _marqueeRect.getHeight() < kClickVsDragThreshold;
+        if (isTrivialClick)
+        {
+            // A plain click where there's no note block - the literal "deselect by clicking
+            // somewhere with no midi note blocks" requirement.
+            _selectedNoteIndices.clear();
+        }
+        else
+        {
+            _selectedNoteIndices.clear();
+            for (int i = 0; i < static_cast<int>(_notes.size()); ++i)
+            {
+                const auto& note = _notes[static_cast<std::size_t>(i)];
+                const juce::Rectangle<float> noteBounds(beatToX(note.startBeat), pitchToY(note.midiNote),
+                    static_cast<float>(note.lengthBeats * static_cast<double>(_pixelsPerBeat)), _rowHeight);
+                if (_marqueeRect.intersects(noteBounds))
+                    _selectedNoteIndices.push_back(i);
+            }
+        }
+        _marqueeRect = juce::Rectangle<float>();
+        repaint();
+    }
     else if (didDrag)
     {
+        // A plain click (no real movement) on a note that was already part of a bigger selection
+        // narrows the selection down to just that one - the "select a single block by clicking on
+        // it" requirement, without ever preventing a drag of the whole group (see mouseDown).
+        if (!mouseActuallyMoved && _mouseDownNoteWasAlreadySelected && finishedNoteIndex >= 0
+            && (finishedDragMode == DragMode::MoveNote || finishedDragMode == DragMode::ResizeNoteStart || finishedDragMode == DragMode::ResizeNoteEnd))
+        {
+            _selectedNoteIndices = { finishedNoteIndex };
+            repaint();
+        }
+
         notifyContentChanged();
     }
 }
@@ -541,6 +616,7 @@ void MidiEditor::mouseDoubleClick(const juce::MouseEvent& event)
     {
         _notes.erase(_notes.begin() + noteIndex);
         _hoveredNoteIndex = -1;
+        _selectedNoteIndices.clear(); // a single-index erase shifts every later index - simplest to just drop the selection
         refreshScrollRanges();
         repaint();
         notifyContentChanged();
@@ -597,6 +673,49 @@ void MidiEditor::mouseWheelMove(const juce::MouseEvent& event, const juce::Mouse
 void MidiEditor::mouseMagnify(const juce::MouseEvent& event, float scaleFactor)
 {
     zoomHorizontal(scaleFactor, event.position);
+}
+
+bool MidiEditor::keyPressed(const juce::KeyPress& key)
+{
+    if (_selectedNoteIndices.empty())
+        return false;
+
+    if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
+    {
+        // Descending order so erasing an earlier index doesn't shift a later one out from under us.
+        auto sortedIndices = _selectedNoteIndices;
+        std::sort(sortedIndices.begin(), sortedIndices.end(), std::greater<int>());
+        for (const auto index : sortedIndices)
+            _notes.erase(_notes.begin() + index);
+
+        _selectedNoteIndices.clear();
+        _hoveredNoteIndex = -1;
+        refreshScrollRanges();
+        repaint();
+        notifyContentChanged();
+        return true;
+    }
+
+    if (key == juce::KeyPress::leftKey || key == juce::KeyPress::rightKey
+        || key == juce::KeyPress::upKey || key == juce::KeyPress::downKey)
+    {
+        const auto beatDelta = key == juce::KeyPress::leftKey ? -kSnapBeats : key == juce::KeyPress::rightKey ? kSnapBeats : 0.0;
+        const auto pitchDelta = key == juce::KeyPress::upKey ? 1 : key == juce::KeyPress::downKey ? -1 : 0;
+
+        for (const auto index : _selectedNoteIndices)
+        {
+            auto& note = _notes[static_cast<std::size_t>(index)];
+            note.startBeat = juce::jmax(0.0, note.startBeat + beatDelta);
+            note.midiNote = juce::jlimit(kMinMidiNote, kMaxMidiNote, note.midiNote + pitchDelta);
+        }
+
+        refreshScrollRanges();
+        repaint();
+        notifyContentChanged();
+        return true;
+    }
+
+    return false;
 }
 
 void MidiEditor::timerCallback()
@@ -716,12 +835,31 @@ void MidiEditor::paintNotes(juce::Graphics& g) const
         g.setColour(accent.withAlpha(.6f));
         g.fillRoundedRectangle(bounds, 3.f);
 
+        if (std::find(_selectedNoteIndices.begin(), _selectedNoteIndices.end(), i) != _selectedNoteIndices.end())
+        {
+            g.setColour(accent);
+            g.drawRoundedRectangle(bounds, 3.f, 2.f);
+        }
+
         if (i == _hoveredNoteIndex && _hoveredIsResizeZone)
         {
             g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::EMPTY_SHADE).asJuce());
             g.fillRoundedRectangle(_hoveredResizeIsLeftEdge ? bounds.removeFromLeft(kResizeHandleWidth) : bounds.removeFromRight(kResizeHandleWidth), 3.f);
         }
     }
+}
+
+void MidiEditor::paintMarqueeSelection(juce::Graphics& g) const
+{
+    if (_dragMode != DragMode::MarqueeSelect || _marqueeRect.isEmpty())
+        return;
+
+    // Same low-alpha-fill-plus-stroke idiom as paintLoopRegion's bands.
+    const auto accent = nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce();
+    g.setColour(accent.withAlpha(0.15f));
+    g.fillRect(_marqueeRect);
+    g.setColour(accent);
+    g.drawRect(_marqueeRect, 1.f);
 }
 
 void MidiEditor::paintRuler(juce::Graphics& g) const
@@ -985,29 +1123,66 @@ void MidiEditor::applyDragAt(juce::Point<float> position)
 
     if (_dragMode == DragMode::MoveNote && _draggedNoteIndex >= 0)
     {
-        auto& note = _notes[static_cast<std::size_t>(_draggedNoteIndex)];
-        const auto rawStart = _dragStartBeat + deltaBeats;
-        note.startBeat = juce::jmax(0.0, snap ? snapBeat(rawStart) : rawStart);
-        note.midiNote = yToPitch(position.y);
+        // deltaPitchRows as a *relative* shift, applied to every selected note's own drag-start
+        // pitch, rather than snapping each one absolutely to yToPitch(position.y) - for a single
+        // selected note this is mathematically identical to the old absolute behavior (hit-testing
+        // guarantees yToPitch(_dragStartMouse.y) already equals that note's own original pitch), so
+        // this one formula covers both the single- and multi-select cases with no behavior change
+        // for the former.
+        const auto deltaPitchRows = yToPitch(position.y) - yToPitch(_dragStartMouse.y);
+        for (std::size_t i = 0; i < _selectedNoteIndices.size(); ++i)
+        {
+            auto& note = _notes[static_cast<std::size_t>(_selectedNoteIndices[i])];
+            const auto& snapshot = _dragStartSnapshots[i];
+            const auto rawStart = snapshot.startBeat + deltaBeats;
+            note.startBeat = juce::jmax(0.0, snap ? snapBeat(rawStart) : rawStart);
+            note.midiNote = juce::jlimit(kMinMidiNote, kMaxMidiNote, snapshot.midiNote + deltaPitchRows);
+        }
         repaint();
     }
     else if (_dragMode == DragMode::ResizeNoteEnd && _draggedNoteIndex >= 0)
     {
-        auto& note = _notes[static_cast<std::size_t>(_draggedNoteIndex)];
+        // The anchor's own new length, computed exactly as before a selection could be more than
+        // one note; every other selected note is extended/reduced by that *same delta* (not
+        // snapped to the anchor's new absolute end), so "extend them all together" preserves each
+        // note's own length relationship rather than collapsing them all to one end time.
         const auto rawEnd = _dragStartBeat + _dragStartLengthBeats + deltaBeats;
         const auto snappedEnd = snap ? snapBeat(rawEnd) : rawEnd;
-        note.lengthBeats = juce::jmax(kSnapBeats, snappedEnd - _dragStartBeat);
+        const auto anchorNewLength = juce::jmax(kSnapBeats, snappedEnd - _dragStartBeat);
+        const auto lengthDelta = anchorNewLength - _dragStartLengthBeats;
+
+        for (std::size_t i = 0; i < _selectedNoteIndices.size(); ++i)
+        {
+            auto& note = _notes[static_cast<std::size_t>(_selectedNoteIndices[i])];
+            note.lengthBeats = juce::jmax(kSnapBeats, _dragStartSnapshots[i].lengthBeats + lengthDelta);
+        }
         repaint();
     }
     else if (_dragMode == DragMode::ResizeNoteStart && _draggedNoteIndex >= 0)
     {
-        auto& note = _notes[static_cast<std::size_t>(_draggedNoteIndex)];
-        const auto originalEnd = _dragStartBeat + _dragStartLengthBeats; // fixed - only the start edge moves
+        const auto originalEnd = _dragStartBeat + _dragStartLengthBeats; // anchor's own end, fixed
         const auto rawStart = _dragStartBeat + deltaBeats;
         const auto snappedStart = snap ? snapBeat(rawStart) : rawStart;
         const auto clampedStart = juce::jmin(snappedStart, originalEnd - kSnapBeats);
-        note.startBeat = juce::jmax(0.0, clampedStart);
-        note.lengthBeats = originalEnd - note.startBeat;
+        const auto anchorNewStart = juce::jmax(0.0, clampedStart);
+        const auto startDelta = anchorNewStart - _dragStartBeat;
+
+        // Every other selected note keeps *its own* end fixed and shifts its start by the same
+        // delta the anchor's start just moved by.
+        for (std::size_t i = 0; i < _selectedNoteIndices.size(); ++i)
+        {
+            auto& note = _notes[static_cast<std::size_t>(_selectedNoteIndices[i])];
+            const auto& snapshot = _dragStartSnapshots[i];
+            const auto noteOriginalEnd = snapshot.startBeat + snapshot.lengthBeats;
+            const auto noteNewStart = juce::jmax(0.0, juce::jmin(snapshot.startBeat + startDelta, noteOriginalEnd - kSnapBeats));
+            note.startBeat = noteNewStart;
+            note.lengthBeats = noteOriginalEnd - noteNewStart;
+        }
+        repaint();
+    }
+    else if (_dragMode == DragMode::MarqueeSelect)
+    {
+        _marqueeRect = juce::Rectangle<float>(_dragStartMouse, position);
         repaint();
     }
     else if (_dragMode == DragMode::MoveChordBlock && _draggedChordIndex >= 0)

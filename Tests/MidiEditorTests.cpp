@@ -85,6 +85,31 @@ namespace
     // getTestChord() always resolves to degree I - this just packages that fact for addChordAtBeat
     // calls that don't care about provenance beyond "a real, consistent slot".
     ProgressionSlot testSlot(const Chord& chord) { return { Degree::I, chord.popularityOrder }; }
+
+    // Double-clicks empty space to add a single note at (beat, pitch) - kDefaultNoteLengthBeats
+    // (1.0) long, same mechanism as the "double-click adds a note" test above. Callers pick
+    // beat/pitch that stay within the default 800x400 test bounds' content area and don't collide
+    // with an already-placed note.
+    void addNoteAt(MidiEditor& editor, double beat, int pitch)
+    {
+        editor.mouseDoubleClick(makeMouseEvent(editor, { beatToX(beat), pitchToY(pitch) + 1.f }));
+    }
+
+    // Drags a rubber-band from an empty starting point to `end` - mouseUp resolves it into
+    // _selectedNoteIndices for every note whose bounds intersect the resulting rect.
+    void marqueeSelect(MidiEditor& editor, juce::Point<float> start, juce::Point<float> end)
+    {
+        editor.mouseDown(makeMouseEvent(editor, start));
+        editor.mouseDrag(makeMouseEvent(editor, end));
+        editor.mouseUp(makeMouseEvent(editor, end));
+    }
+
+    // A plain click (no movement) at pos - mouseDown immediately followed by mouseUp at the same point.
+    void click(MidiEditor& editor, juce::Point<float> pos)
+    {
+        editor.mouseDown(makeMouseEvent(editor, pos));
+        editor.mouseUp(makeMouseEvent(editor, pos));
+    }
 }
 
 TEST_CASE("MidiEditor::addChordAtBeat splits the chord into one note block per chord tone", "[MidiEditor]")
@@ -470,4 +495,207 @@ TEST_CASE("MidiEditor: double-clicking the ruler zooms/scrolls so the loop exact
     editor.mouseDoubleClick(makeMouseEvent(editor, midBarPos));
 
     CHECK(editor.getChordBlockCount() == 0);
+}
+
+TEST_CASE("MidiEditor: clicking an unselected note selects only it; clicking a different note replaces the selection", "[MidiEditor][MultiSelect]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64); // index 0
+    addNoteAt(editor, 5.0, 55); // index 1
+    REQUIRE(editor.getNoteCount() == 2);
+
+    click(editor, { beatToX(1.0) + 40.f, pitchToY(64) + 1.f }); // click note 0's body
+    click(editor, { beatToX(5.0) + 40.f, pitchToY(55) + 1.f }); // click note 1's body - replaces the selection
+
+    // Indirect proof only note 1 ended up selected: Delete removes it and leaves note 0 untouched
+    // (there's no public accessor for the selection itself - see MidiEditor.h).
+    editor.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey));
+
+    REQUIRE(editor.getNoteCount() == 1);
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(1.0));
+    CHECK(*editor.getNoteMidiPitch(0) == 64);
+}
+
+TEST_CASE("MidiEditor: a marquee drag that intersects two notes without fully containing them selects both", "[MidiEditor][MultiSelect]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64); // bounds x:[120,200) y:[72,88)
+    addNoteAt(editor, 5.0, 55); // bounds x:[440,520) y:[216,232)
+    REQUIRE(editor.getNoteCount() == 2);
+
+    // Fully contains note 0 but only clips note 1's corner - proves selection uses
+    // juce::Rectangle::intersects (partial overlap counts), not full containment.
+    marqueeSelect(editor, { 100.f, 60.f }, { 480.f, 220.f });
+
+    editor.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey));
+    CHECK(editor.getNoteCount() == 0);
+}
+
+TEST_CASE("MidiEditor: a trivial click on empty space clears an existing selection", "[MidiEditor][MultiSelect]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64);
+    REQUIRE(editor.getNoteCount() == 1);
+
+    click(editor, { beatToX(1.0) + 40.f, pitchToY(64) + 1.f }); // select it
+    click(editor, { 700.f, 300.f }); // empty space, no movement
+
+    // Indirect proof the selection is now empty: Delete is a no-op.
+    CHECK_FALSE(editor.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey)));
+    CHECK(editor.getNoteCount() == 1);
+}
+
+TEST_CASE("MidiEditor: dragging one of several selected notes moves all of them by the same delta, preserving their relative offsets", "[MidiEditor][MultiSelect]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64); // index 0 - will be the drag anchor
+    addNoteAt(editor, 5.0, 55); // index 1
+    marqueeSelect(editor, { 100.f, 60.f }, { 480.f, 220.f });
+
+    const juce::Point<float> start { beatToX(1.0) + 40.f, pitchToY(64) + 1.f }; // note 0's body
+    const juce::Point<float> dragged { start.x + 2.f * kPixelsPerBeat, start.y - 3.f * kRowHeight }; // +2 beats, +3 semitones
+
+    editor.mouseDown(makeMouseEvent(editor, start));
+    editor.mouseDrag(makeMouseEvent(editor, dragged));
+    editor.mouseUp(makeMouseEvent(editor, dragged));
+
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(3.0));
+    CHECK(*editor.getNoteMidiPitch(0) == 67);
+    CHECK(*editor.getNoteStartBeat(1) == Catch::Approx(7.0));
+    CHECK(*editor.getNoteMidiPitch(1) == 58);
+
+    // Relative offsets between the two notes are preserved.
+    CHECK(*editor.getNoteStartBeat(1) - *editor.getNoteStartBeat(0) == Catch::Approx(4.0));
+    CHECK(*editor.getNoteMidiPitch(1) - *editor.getNoteMidiPitch(0) == -9);
+}
+
+TEST_CASE("MidiEditor: resizing one selected note's right edge extends every selected note's length by the same delta", "[MidiEditor][MultiSelect]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64); // index 0 - anchor, bounds x:[120,200)
+    addNoteAt(editor, 1.0, 50); // index 1, same column so one marquee column covers both rows
+    marqueeSelect(editor, { 110.f, 60.f }, { 210.f, 320.f });
+
+    const auto rightEdgeX = beatToX(1.0 + 1.0); // = 200
+    const juce::Point<float> start { rightEdgeX - 3.f, pitchToY(64) + 1.f }; // inside the resize handle's 7px zone
+    const juce::Point<float> dragged { start.x + kPixelsPerBeat, start.y }; // +1 beat of length
+
+    editor.mouseDown(makeMouseEvent(editor, start));
+    editor.mouseDrag(makeMouseEvent(editor, dragged));
+    editor.mouseUp(makeMouseEvent(editor, dragged));
+
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(1.0));
+    CHECK(*editor.getNoteLengthBeats(0) == Catch::Approx(2.0));
+    CHECK(*editor.getNoteStartBeat(1) == Catch::Approx(1.0));
+    CHECK(*editor.getNoteLengthBeats(1) == Catch::Approx(2.0));
+}
+
+TEST_CASE("MidiEditor: resizing one selected note's left edge keeps every selected note's own end fixed while extending it by the same delta", "[MidiEditor][MultiSelect]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 5.0, 64); // index 0 - anchor, bounds x:[440,520), own end at beat 6.0
+    addNoteAt(editor, 1.0, 50); // index 1, bounds x:[120,200), own end at beat 2.0 - deliberately
+                                // different from the anchor's, to prove each note keeps its OWN end
+                                // fixed rather than everyone snapping to a shared end.
+    marqueeSelect(editor, { 700.f, 50.f }, { 60.f, 320.f });
+
+    const auto leftEdgeX = beatToX(5.0); // = 440
+    const juce::Point<float> start { leftEdgeX + 3.f, pitchToY(64) + 1.f }; // inside the resize handle's 7px zone
+    const juce::Point<float> dragged { start.x - 0.5f * kPixelsPerBeat, start.y }; // start half a beat earlier
+
+    editor.mouseDown(makeMouseEvent(editor, start));
+    editor.mouseDrag(makeMouseEvent(editor, dragged));
+    editor.mouseUp(makeMouseEvent(editor, dragged));
+
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(4.5));
+    CHECK(*editor.getNoteStartBeat(0) + *editor.getNoteLengthBeats(0) == Catch::Approx(6.0));
+    CHECK(*editor.getNoteStartBeat(1) == Catch::Approx(0.5));
+    CHECK(*editor.getNoteStartBeat(1) + *editor.getNoteLengthBeats(1) == Catch::Approx(2.0));
+}
+
+TEST_CASE("MidiEditor: clicking (no drag) one note out of an existing multi-selection collapses the selection to just that one", "[MidiEditor][MultiSelect]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64); // index 0
+    addNoteAt(editor, 5.0, 55); // index 1
+    marqueeSelect(editor, { 100.f, 60.f }, { 480.f, 220.f });
+
+    // A plain click (no movement) on note 0, already part of the selection, narrows it to just that one.
+    click(editor, { beatToX(1.0) + 40.f, pitchToY(64) + 1.f });
+
+    editor.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey));
+
+    // Only note 0 was removed - note 1 survives (now at index 0 after the erase).
+    REQUIRE(editor.getNoteCount() == 1);
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(5.0));
+    CHECK(*editor.getNoteMidiPitch(0) == 55);
+}
+
+TEST_CASE("MidiEditor::keyPressed(deleteKey) removes every selected note and clears the selection; a no-op when nothing is selected", "[MidiEditor][MultiSelect]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    CHECK_FALSE(editor.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey)));
+
+    addNoteAt(editor, 1.0, 64);
+    addNoteAt(editor, 5.0, 55);
+    REQUIRE(editor.getNoteCount() == 2);
+
+    // Adding notes doesn't select them - still a no-op.
+    CHECK_FALSE(editor.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey)));
+    CHECK(editor.getNoteCount() == 2);
+
+    marqueeSelect(editor, { 100.f, 60.f }, { 480.f, 220.f });
+
+    CHECK(editor.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey)));
+    CHECK(editor.getNoteCount() == 0);
+
+    // Selection is now empty again - another Delete is a no-op.
+    CHECK_FALSE(editor.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey)));
+}
+
+TEST_CASE("MidiEditor: arrow keys nudge every selected note by kSnapBeats/one semitone; a no-op when nothing is selected", "[MidiEditor][MultiSelect]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64); // index 0
+    addNoteAt(editor, 5.0, 55); // index 1
+    REQUIRE(editor.getNoteCount() == 2);
+
+    CHECK_FALSE(editor.keyPressed(juce::KeyPress(juce::KeyPress::rightKey)));
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(1.0));
+
+    marqueeSelect(editor, { 100.f, 60.f }, { 480.f, 220.f });
+
+    CHECK(editor.keyPressed(juce::KeyPress(juce::KeyPress::rightKey)));
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(1.25));
+    CHECK(*editor.getNoteStartBeat(1) == Catch::Approx(5.25));
+
+    CHECK(editor.keyPressed(juce::KeyPress(juce::KeyPress::leftKey)));
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(1.0));
+    CHECK(*editor.getNoteStartBeat(1) == Catch::Approx(5.0));
+
+    CHECK(editor.keyPressed(juce::KeyPress(juce::KeyPress::upKey)));
+    CHECK(*editor.getNoteMidiPitch(0) == 65);
+    CHECK(*editor.getNoteMidiPitch(1) == 56);
+
+    CHECK(editor.keyPressed(juce::KeyPress(juce::KeyPress::downKey)));
+    CHECK(*editor.getNoteMidiPitch(0) == 64);
+    CHECK(*editor.getNoteMidiPitch(1) == 55);
 }

@@ -129,6 +129,7 @@ public:
     void mouseDoubleClick(const juce::MouseEvent&) override;
     void mouseWheelMove(const juce::MouseEvent&, const juce::MouseWheelDetails&) override;
     void mouseMagnify(const juce::MouseEvent&, float scaleFactor) override;
+    bool keyPressed(const juce::KeyPress&) override;
 
 private:
     struct MidiNoteBlock
@@ -152,7 +153,7 @@ private:
                                              // popularityOrder; never re-resolved live afterward
     };
 
-    enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, MoveChordBlock, ResizeLoopStart, ResizeLoopEnd };
+    enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, MoveChordBlock, ResizeLoopStart, ResizeLoopEnd, MarqueeSelect };
 
     void timerCallback() override; // drag-triggered auto-scroll, and while playing, playhead repaint
 
@@ -164,6 +165,7 @@ private:
     void paintGutter(juce::Graphics&) const;
     void paintLoopRegion(juce::Graphics&) const;
     void paintPlayhead(juce::Graphics&) const;
+    void paintMarqueeSelection(juce::Graphics&) const;
 
     // coordinate math
     [[nodiscard]] float beatToX(double beat) const noexcept;
@@ -232,6 +234,16 @@ private:
     bool _hoveredIsResizeZone = false;
     bool _hoveredResizeIsLeftEdge = false;
     bool _isHovering = false;
+
+    // Multi-select. _selectedNoteIndices are plain indices into _notes - invalidated (cleared)
+    // whenever anything could shift/invalidate them: clear(), restoreState(), and
+    // addChordAtBeat's replace-existing-block path. _dragStartSnapshots is a parallel copy of each
+    // selected note's state at the moment a group move/resize gesture began, so every note's new
+    // value is computed from its *own* starting point, not the anchor's.
+    std::vector<int> _selectedNoteIndices;
+    std::vector<MidiNoteBlock> _dragStartSnapshots;
+    bool _mouseDownNoteWasAlreadySelected = false;
+    juce::Rectangle<float> _marqueeRect;
 
     audio::ProgressionPlayer* _progressionPlayer = nullptr;
     double _loopStartBeat = 0.0;
