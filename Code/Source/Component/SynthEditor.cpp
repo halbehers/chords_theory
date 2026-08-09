@@ -28,7 +28,7 @@ SynthEditor::SynthEditor(ndsp::ParameterManager& parameterManager,
     addAndMakeVisible(_outputSection);
 
     _layout.setGap(16.f);
-    _layout.setMargin(0.f, 0.f, 0.f, 16.f);
+    _layout.setMargin(32.f, 0.f, 32.f, 16.f);
 
     _layout.setDisplayGrid(false);
     _layout.init({ 3, 2 }, { 4, 6, 2, 2, 6, 4, 6, 6 });
