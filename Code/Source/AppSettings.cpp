@@ -4,6 +4,7 @@ namespace
 {
     const char* SHOW_STANDALONE_TITLE_KEY = "showStandaloneTitle";
     const char* THEME_MODE_KEY = "themeMode";
+    const char* OUTPUT_TRIM_DB_KEY = "outputTrimDb";
     const char* LANGUAGE_KEY = "language";
 
     const char* THEME_MODE_LIGHT = "light";
@@ -61,6 +62,17 @@ nui::Theme::Mode AppSettings::getThemeMode() const
 void AppSettings::setThemeMode(nui::Theme::Mode mode)
 {
     _properties.setValue(THEME_MODE_KEY, mode == nui::Theme::Mode::LIGHT ? THEME_MODE_LIGHT : THEME_MODE_DARK);
+    _properties.save();
+}
+
+int AppSettings::getOutputTrimDb() const
+{
+    return _properties.getIntValue(OUTPUT_TRIM_DB_KEY, 0);
+}
+
+void AppSettings::setOutputTrimDb(int db)
+{
+    _properties.setValue(OUTPUT_TRIM_DB_KEY, db);
     _properties.save();
 }
 

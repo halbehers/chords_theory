@@ -176,6 +176,8 @@ void PluginAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::
 
     buffer.clear();
     _synthEngine.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples(), getPlayHead());
+
+    buffer.applyGain(_outputTrimGain.load());
 }
 
 //==============================================================================

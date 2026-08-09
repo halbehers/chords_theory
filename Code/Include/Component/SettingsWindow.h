@@ -2,6 +2,11 @@
 
 #include <nierika_dsp/nierika_dsp.h>
 
+#include "PluginProcessor.h"
+#include "Component/VisualSettings.h"
+#include "Component/OutputSettings.h"
+#include "Component/LanguageSettings.h"
+
 namespace component
 {
 
@@ -9,7 +14,7 @@ class SettingsWindow : public nlayout::Window,
                         public nelement::SVGButton::OnClickListener
 {
 public:
-    SettingsWindow(const std::string& identifier, nlayout::WindowsManager& windowsManager);
+    SettingsWindow(const std::string& identifier, nlayout::WindowsManager& windowsManager, PluginAudioProcessor& audioProcessor);
     ~SettingsWindow() override;
 
     void paint(juce::Graphics& g) override;
@@ -33,6 +38,10 @@ private:
     nelement::SVGButton _closeButton { "settings-close-button", nui::Icons::getCross() };
 
     nlayout::GridLayout<nui::Component> _layout { *this };
+
+    VisualSettings _visualSettings { "settings-visual" };
+    OutputSettings _outputSettings;
+    LanguageSettings _languageSettings { "settings-language" };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(SettingsWindow)
 };

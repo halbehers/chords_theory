@@ -19,7 +19,7 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
 {
     _settings.setIconSize(24.f);
     _settings.addOnClickListener(this);
-    _windowsManager.createWindow(std::make_unique<component::SettingsWindow>("settings", _windowsManager));
+    _windowsManager.createWindow(std::make_unique<component::SettingsWindow>("settings", _windowsManager, audioProcessor));
 
     _keyScaleSelector.addListener(this);
 

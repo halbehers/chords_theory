@@ -16,6 +16,9 @@ public:
     [[nodiscard]] nui::Theme::Mode getThemeMode() const;
     void setThemeMode(nui::Theme::Mode mode);
 
+    [[nodiscard]] int getOutputTrimDb() const;
+    void setOutputTrimDb(int db);
+
     [[nodiscard]] std::string getLanguage() const;
     void setLanguage(const std::string& languageCode);
 

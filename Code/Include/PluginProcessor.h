@@ -63,6 +63,8 @@ public:
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
+    void setOutputTrimDb(int db) { _outputTrimGain.store(juce::Decibels::decibelsToGain(static_cast<float>(db))); }
+
     // Runtime checks, not preprocessor ones: JUCE compiles this file once as shared code across
     // every format in FORMATS (CMakeLists.txt), so e.g. JucePlugin_Build_VST3 is true for all of
     // them whenever VST3 is among the built formats, regardless of which one actually loads it.
@@ -72,6 +74,8 @@ public:
 
 private:
     juce::AudioProcessorValueTreeState::ParameterLayout getParameterLayout();
+
+    std::atomic<float> _outputTrimGain { 1.0f };
 
     audio::ChordSynthEngine _synthEngine;
 

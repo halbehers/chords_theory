@@ -4,9 +4,10 @@
 namespace component
 {
 
-SettingsWindow::SettingsWindow(const std::string& identifier, nlayout::WindowsManager& windowsManager):
+SettingsWindow::SettingsWindow(const std::string& identifier, nlayout::WindowsManager& windowsManager, PluginAudioProcessor& audioProcessor):
     Window(identifier, nlayout::Distance<>(100, nlayout::Distance<>::PERCENTAGE), nlayout::Distance<>(100, nlayout::Distance<>::PERCENTAGE)),
-    _windowsManager(windowsManager)
+    _windowsManager(windowsManager),
+    _outputSettings("settings-output", audioProcessor)
 {
     setMovable(false);
 
@@ -27,11 +28,14 @@ SettingsWindow::SettingsWindow(const std::string& identifier, nlayout::WindowsMa
 
     _layout.setGap(24.f);
     _layout.setDisplayGrid(false);
-    _layout.init({ 1 }, { 1 });
+    _layout.init({ 1, 3, 3 }, { 4, 5 });
 
     _layout.setFixedRowHeight(0, 42.f);
 
-    _layout.addComponent(_title, 0, 0, 1, 1);
+    _layout.addComponent(_title, 0, 0, 2, 1);
+    _layout.addComponent(_visualSettings, 1, 0, 1, 1);
+    _layout.addComponent(_outputSettings, 1, 1, 1, 2);
+    _layout.addComponent(_languageSettings, 2, 0, 1, 1);
 
     _titleIcon.toFront(false);
     _closeButton.toFront(false);
