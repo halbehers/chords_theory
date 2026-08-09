@@ -38,6 +38,12 @@ see `README.md` for exact commands (`cmake --workflow --preset default`, `ctest 
   `voiceChordCloseToMiddleC` (pitch classes in chord-array order → ascending MIDI notes, closed
   voicing, lowest note at/below middle C — the first array entry becomes the bass, which correctly
   handles inversions since bass-first order is preserved from the source data).
+- `ChordIdentifier` — the reverse of the above: stateless `identify(midiNotes, key, scale)` matches a
+  set of sounding MIDI notes against `ChordDatabase::get(key, scale)`'s full chord list, keyed on
+  `(bass pitch class, full pitch-class set)` — confirmed unique within any single Key/Scale's chord
+  list, so at most one match is possible; deliberately does not fall back to searching other
+  keys/scales. Backs `MidiEditor`'s auto-detected chord lane (see below) — there is no forward→
+  backward ambiguity to resolve beyond picking the right Key/Scale context.
 - `MidiExporter` — writes temporary Standard MIDI Files (120bpm/4-4 fallback, 960 ticks/quarter).
   `writeSingleChordMidiFile`/`writeProgressionMidiFile` place chords on a rigid one-measure grid
   (the latter still backs single-chord `ChordCard` drags and remains directly unit-tested, but has
@@ -58,8 +64,11 @@ see `README.md` for exact commands (`cmake --workflow --preset default`, `ctest 
   pin. `ProgressionEditor::loadPreset` resolves each slot against the live per-degree voicing (or
   the pin) and places the result at one bar per slot in `MidiEditor`; `ProgressionEditor::
   getPopulatedSlots` reads back out by sorting `MidiEditor`'s chord blocks by position and
-  reporting each one's `ProgressionSlot`, frozen at drop time (see `MidiEditorState` below) - not
-  re-resolved live. `ProgressionPresetLibrary` combines built-ins with user-saved presets,
+  reporting each one's `ProgressionSlot` - always freshly detected from whatever notes are
+  currently there (see `ChordIdentifier` above), not authored/frozen at drop time. A saved preset
+  therefore reflects whatever's diatonically detectable at save time; a bar whose notes have been
+  edited into something non-diatonic to the current Key/Scale simply has no chord block and is
+  skipped. `ProgressionPresetLibrary` combines built-ins with user-saved presets,
   persisted via `juce::PropertiesFile` in `AppSettings::getAppSupportDirectory()` (its own
   file/lock, separate from `AppSettings`) — shared across every plugin instance and DAW project,
   same pattern as `AppSettings` itself (including a public file-parameterized constructor for test
@@ -67,20 +76,23 @@ see `README.md` for exact commands (`cmake --workflow --preset default`, `ctest 
 - `MidiEditorState`/`SessionState`/`SessionStateSerializer` — pure data + `juce::ValueTree`
   (de)serialization for everything a session needs to survive a DAW project close/reopen: Key,
   Scale, the chosen chord per degree, and `MidiEditorState` (a pure-data mirror of `MidiEditor`'s
-  own notes/chord-blocks, each chord block carrying the `ProgressionSlot` it was dropped/loaded
-  with). Deliberately has zero UI/component dependency so it's unit-testable without constructing
-  any `nui::Component` - `MidiEditor::getState()`/`restoreState()` are the bridge on the component
-  side.
+  own notes - notes only, no chord-block data: chord blocks are 100% derived from notes, see below,
+  so persisting them would be redundant and risk drifting out of sync). Deliberately has zero UI/
+  component dependency so it's unit-testable without constructing any `nui::Component` -
+  `MidiEditor::getState()`/`restoreState()` are the bridge on the component side.
 
 **UI layer** (`Code/Include/Component`) — `KeyScaleSelector` (two comboboxes) →
 `ChordDegreeBrowser` (one `ChordCard` per available degree) + `VoicingPicker` (popup, click a
 card) → `ProgressionEditor` (header row: `ProgressionPresetPicker`, `SavePresetPrompt`,
 `ProgressionDragHandle`; below it, `MidiEditor` - a scrollable/zoomable piano roll with a
-pitch-labeled gutter, beat/bar ruler, and a "chord lane" strip). `MidiEditor` is the sole data
-model for the progression: dropping a `ChordCard` splits the chord into movable/resizable note
-blocks plus one labeled chord-lane block; `ProgressionEditor` never keeps its own parallel copy of
-that data, it only reads/writes `MidiEditor` directly (`addChordAtBeat`, `loadPreset`,
-`getPopulatedSlots`, `getMidiEditorState`/`restoreMidiEditorState`). All components follow the
+pitch-labeled gutter, beat/bar ruler, and a read-only "chord lane" strip). `MidiEditor` is the sole
+data model for the progression: dropping a `ChordCard` splits the chord into movable/resizable note
+blocks (`addChordAtBeat`); the chord lane itself is never authored - it's entirely derived from
+whatever notes exist, via `ChordIdentifier`, and re-labels live on every note edit (see
+`recomputeChordBlocksFromNotes`, called from `notifyContentChanged`). `ProgressionEditor` never
+keeps its own parallel copy of that data, it only reads/writes `MidiEditor` directly
+(`addChordAtBeat`, `loadPreset`, `getPopulatedSlots`, `setKeyAndScale`,
+`getMidiEditorState`/`restoreMidiEditorState`). All components follow the
 template's existing construction convention: `nui::Component` base, own a
 `nlayout::GridLayout<nui::Component> _layout { *this }`, `paint()`/`resized()` forward to it, react
 to `nui::Theme::getChangeBroadcaster()` and `AppLocalisation::getChangeBroadcaster()` via

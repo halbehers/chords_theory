@@ -27,7 +27,7 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _chordBrowser.setKeyAndScale(_keyScaleSelector.getKey(), _keyScaleSelector.getScale());
 
     _progressionEditor.addListener(this);
-    _progressionEditor.setScale(_keyScaleSelector.getScale());
+    _progressionEditor.setKeyAndScale(_keyScaleSelector.getKey(), _keyScaleSelector.getScale());
 
     _voicingSelector.addListener(this);
     _voicingSelector.setDismissExemptComponent(&_chordBrowser);
@@ -74,22 +74,19 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     getLayout().setDisplayGrid(false);
     getLayout().setResizableLineConfiguration({ .displayLine = false });
 
-    constexpr float bottomMargin = 24.f;
-
-
     if (audioProcessor.isAudioUnit() || audioProcessor.isVst3())
     {
-        getLayout().setMargin(0.f, 0.f, 24.f, bottomMargin);
+        getLayout().setMargin(0.f, 0.f, 24.f, 0.f);
     }
 #if JUCE_MAC
     else
     {
-        getLayout().setMargin(0.f, 24.f + 16.f, 0.f, bottomMargin);
+        getLayout().setMargin(0.f, 24.f + 16.f, 0.f, 0.f);
     }
 #else
     else
     {
-        getLayout().setMargin(0.f, 0.f, 0.f, bottomMargin);
+        getLayout().setMargin(0.f, 0.f, 0.f, 0.f);
     }
 #endif
 
@@ -162,7 +159,7 @@ void AppLayout::onKeyScaleChanged(theory::Key key, theory::Scale scale)
     _voicingSelector.close();
 
     _chordBrowser.setKeyAndScale(key, scale);
-    _progressionEditor.setScale(scale);
+    _progressionEditor.setKeyAndScale(key, scale);
 
     syncStateToValueTree();
 }
@@ -247,7 +244,7 @@ void AppLayout::onChordFileDropped(double startBeat, const juce::String& filePat
         return;
 
     if (const auto* chord = _chordBrowser.resolveSlot(theory::ProgressionSlot { it->second, 0 }))
-        _progressionEditor.addChordAtBeat(startBeat, *chord, theory::ProgressionSlot { it->second, chord->popularityOrder });
+        _progressionEditor.addChordAtBeat(startBeat, *chord);
 
     _inFlightChordDrags.erase(it);
 }
@@ -301,7 +298,7 @@ void AppLayout::restoreStateFromValueTree()
 
     _keyScaleSelector.setKeyAndScale(state.key, state.scale);
     _chordBrowser.setKeyAndScale(state.key, state.scale);
-    _progressionEditor.setScale(state.scale);
+    _progressionEditor.setKeyAndScale(state.key, state.scale);
 
     for (const auto& [degree, chordSymbol] : state.degreeVoicings)
         _chordBrowser.setDegreeVoicing(degree, chordSymbol);

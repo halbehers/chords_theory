@@ -10,6 +10,7 @@
 #include "Component/ProgressionDragHandle.h"
 #include "Component/ProgressionPresetPicker.h"
 #include "Theory/Chord.h"
+#include "Theory/Key.h"
 #include "Theory/MidiEditorState.h"
 #include "Theory/ProgressionPreset.h"
 #include "Theory/ProgressionSlot.h"
@@ -58,28 +59,27 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
-    // Refreshes the preset picker's filtered list for the new scale - call whenever Key/Scale
-    // changes. Does NOT clear the MidiEditor's existing content (a key/scale change re-voices
-    // existing chord blocks via the ChordResolver only at the next drop/preset-load, it doesn't
-    // retroactively rewrite what's already been dropped - see MidiEditor.h's frozen-at-drop-time
-    // note).
-    void setScale(theory::Scale scale);
+    // Refreshes the preset picker's filtered list for the new scale, and forwards both Key and Scale
+    // to the owned MidiEditor so its auto-detected chord lane re-labels against the new context -
+    // call whenever Key/Scale changes. Does NOT otherwise touch the MidiEditor's existing note
+    // content.
+    void setKeyAndScale(theory::Key key, theory::Scale scale);
 
     // Clears the MidiEditor and places preset.slots[i]'s resolved chord at bar i, in order - an
     // unresolvable slot (e.g. a degree absent under the current scale) simply leaves its bar empty
     // rather than shifting later slots to fill the gap.
     void loadPreset(const theory::ProgressionPreset& preset);
 
-    // The MidiEditor's chord blocks, sorted by startBeat, each reporting the ProgressionSlot it was
-    // dropped/loaded with (frozen at that time - see MidiEditor.h) - used for "save as preset" and
-    // was previously also used for the drag-handle export (now reads getMidiEditorState() instead,
-    // for exact note-level fidelity).
+    // The MidiEditor's chord blocks, sorted by startBeat, each reporting the ProgressionSlot
+    // currently detected from its notes (see MidiEditor.h/ChordIdentifier) - used for "save as
+    // preset" and was previously also used for the drag-handle export (now reads
+    // getMidiEditorState() instead, for exact note-level fidelity).
     [[nodiscard]] std::vector<theory::ProgressionSlot> getPopulatedSlots() const;
 
     // Thin forward to the owned MidiEditor's own addChordAtBeat() - the caller (AppLayout) resolves
     // a chord-file drop's Degree to a Chord itself, then hands it here; this class never reaches
     // past its own MidiEditor member, and AppLayout never reaches past this class.
-    void addChordAtBeat(double startBeat, const theory::Chord& chord, const theory::ProgressionSlot& sourceSlot);
+    void addChordAtBeat(double startBeat, const theory::Chord& chord);
 
     // Pure-data snapshot of the MidiEditor's content, and the inverse - used by AppLayout to
     // persist/restore DAW-project session state without reaching past this class into MidiEditor
@@ -99,6 +99,7 @@ private:
     void onButtonClick(const std::string& componentID) override;
 
     ChordResolver _chordResolver;
+    theory::Key _currentKey = theory::Key::C;
     theory::Scale _currentScale = theory::Scale::Major;
 
     nelement::Text _presetsLabel { "progression-presets-label" };

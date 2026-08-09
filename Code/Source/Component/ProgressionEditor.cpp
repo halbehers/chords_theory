@@ -40,6 +40,7 @@ ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolve
 
     _layout.setGap(8.f);
     _layout.setDisplayGrid(false);
+    _layout.setMargin(0.f, 0.f, 0.f, 16.f);
 
     _layout.init({ 1, 1, 1 }, { 1, 1, 1, 4, 1, 1, 1 });
 
@@ -84,10 +85,12 @@ void ProgressionEditor::resized()
     _layout.resized();
 }
 
-void ProgressionEditor::setScale(theory::Scale scale)
+void ProgressionEditor::setKeyAndScale(theory::Key key, theory::Scale scale)
 {
+    _currentKey = key;
     _currentScale = scale;
     _presetPicker.refreshForScale(scale);
+    _midiEditor.setKeyAndScale(key, scale);
 }
 
 void ProgressionEditor::loadPreset(const theory::ProgressionPreset& preset)
@@ -98,7 +101,7 @@ void ProgressionEditor::loadPreset(const theory::ProgressionPreset& preset)
     {
         const auto& slot = preset.slots[static_cast<std::size_t>(i)];
         if (const auto* chord = _chordResolver ? _chordResolver(slot) : nullptr)
-            _midiEditor.addChordAtBeat(static_cast<double>(i) * MidiEditor::kBeatsPerBar, *chord, slot);
+            _midiEditor.addChordAtBeat(static_cast<double>(i) * MidiEditor::kBeatsPerBar, *chord);
     }
 }
 
@@ -131,9 +134,9 @@ std::vector<theory::ProgressionSlot> ProgressionEditor::getPopulatedSlots() cons
     return result;
 }
 
-void ProgressionEditor::addChordAtBeat(double startBeat, const theory::Chord& chord, const theory::ProgressionSlot& sourceSlot)
+void ProgressionEditor::addChordAtBeat(double startBeat, const theory::Chord& chord)
 {
-    _midiEditor.addChordAtBeat(startBeat, chord, sourceSlot);
+    _midiEditor.addChordAtBeat(startBeat, chord);
 }
 
 void ProgressionEditor::addListener(Listener* listener)

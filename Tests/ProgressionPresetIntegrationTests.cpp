@@ -22,7 +22,7 @@ TEST_CASE("INTEGRATION: end-to-end, exactly as AppLayout wires it - pick non-def
 
     ProgressionEditor sequencer("test-sequencer",
         [&browser](const theory::ProgressionSlot& slot) { return browser.resolveSlot(slot); });
-    sequencer.setScale(Scale::Major);
+    sequencer.setKeyAndScale(Key::C, Scale::Major);
 
     // Step 1: user picks a non-default voicing for degree I via the voicing selector.
     const auto& cDegreeIData = ChordDatabase::getInstance().get(Key::C, Scale::Major).degrees.front();
@@ -37,7 +37,7 @@ TEST_CASE("INTEGRATION: end-to-end, exactly as AppLayout wires it - pick non-def
 
     // Step 2: user drags that ChordCard onto the MidiEditor - exactly like AppLayout::onChordFileDropped,
     // which resolves the degree to a chord then hands both to addChordAtBeat.
-    sequencer.addChordAtBeat(0.0, *liveNow, theory::ProgressionSlot { Degree::I, liveNow->popularityOrder });
+    sequencer.addChordAtBeat(0.0, *liveNow);
 
     // Step 3: user clicks "Save Preset" - exactly ProgressionEditor::onButtonClick's body.
     const auto populatedSlots = sequencer.getPopulatedSlots();
@@ -77,6 +77,9 @@ TEST_CASE("INTEGRATION: end-to-end, exactly as AppLayout wires it - pick non-def
 
     ProgressionEditor sequencer2("test-sequencer-2",
         [&browser](const theory::ProgressionSlot& slot) { return browser.resolveSlot(slot); });
+    // Detection needs to search the SAME key/scale the resolver is now placing notes under (D
+    // Major, from the setKeyAndScale call above) or it won't find a match at all.
+    sequencer2.setKeyAndScale(Key::D, Scale::Major);
     sequencer2.loadPreset(userPresets.front());
 
     const auto reloadedPopulatedSlots = sequencer2.getPopulatedSlots();

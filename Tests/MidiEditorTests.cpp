@@ -33,7 +33,6 @@ namespace
     constexpr float kRowHeight = 16.f;
     constexpr int kInitialTopMidiNote = 67;
     constexpr float kScrollbarThickness = 8.f;
-    constexpr float kChordLaneHeight = 28.f;
     constexpr double kBeatsPerBar = 4.0; // a dropped chord's default length/snap cell is a full bar
 
     float beatToX(double beat) { return kGutterWidth + static_cast<float>(beat) * kPixelsPerBeat; }
@@ -120,7 +119,7 @@ TEST_CASE("MidiEditor::addChordAtBeat splits the chord into one note block per c
     const auto& chord = getTestChord();
     const auto expectedNoteCount = static_cast<int>(NoteConvertor::voiceChordCloseToMiddleC(chord).size());
 
-    editor.addChordAtBeat(0.0, chord, testSlot(chord));
+    editor.addChordAtBeat(0.0, chord);
 
     CHECK(editor.getNoteCount() == expectedNoteCount);
     CHECK(editor.getChordBlockCount() == 1);
@@ -153,7 +152,7 @@ TEST_CASE("MidiEditor: dragging a note moves it in both time and pitch", "[MidiE
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+    editor.addChordAtBeat(0.0, getTestChord());
     REQUIRE(editor.getNoteCount() > 0);
 
     const auto originalPitch = *editor.getNoteMidiPitch(0);
@@ -175,7 +174,7 @@ TEST_CASE("MidiEditor: dragging a note's right edge resizes it without moving it
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+    editor.addChordAtBeat(0.0, getTestChord());
     REQUIRE(editor.getNoteCount() > 0);
 
     const auto originalPitch = *editor.getNoteMidiPitch(0);
@@ -200,7 +199,7 @@ TEST_CASE("MidiEditor: dragging a note's left edge resizes it without moving its
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(kBeatsPerBar, getTestChord(), testSlot(getTestChord())); // starts at bar 2, leaving room to drag the start earlier
+    editor.addChordAtBeat(kBeatsPerBar, getTestChord()); // starts at bar 2, leaving room to drag the start earlier
     REQUIRE(editor.getNoteCount() > 0);
 
     const auto originalPitch = *editor.getNoteMidiPitch(0);
@@ -225,14 +224,13 @@ TEST_CASE("MidiEditor: a chord block's length tracks the longest of its remainin
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+    editor.addChordAtBeat(0.0, getTestChord());
     REQUIRE(editor.getNoteCount() > 0);
     REQUIRE(editor.getChordBlockCount() == 1);
     CHECK(*editor.getChordBlockLengthBeats(0) == Catch::Approx(kBeatsPerBar));
 
-    // Extend note 0's right edge by one extra beat - the chord block should grow to match, even
-    // though ChordBlockData::lengthBeats itself is never mutated after creation (see
-    // MidiEditor::effectiveChordBlockLength).
+    // Extend note 0's right edge by one extra beat - the chord block should grow to match, since its
+    // length is recomputed fresh from its member notes' own span every time the lane re-detects.
     const auto pitch = *editor.getNoteMidiPitch(0);
     const auto start = *editor.getNoteStartBeat(0);
     const auto rightEdgeX = beatToX(start + *editor.getNoteLengthBeats(0));
@@ -275,8 +273,8 @@ TEST_CASE("MidiEditor: a chord dropped on a fully-occupied beat replaces the exi
     const auto& chordB = ChordDatabase::getInstance().get(Key::C, Scale::Major).degrees[1].chords.front();
     const auto expectedCountB = static_cast<int>(NoteConvertor::voiceChordCloseToMiddleC(chordB).size());
 
-    editor.addChordAtBeat(0.0, chordA, { Degree::I, chordA.popularityOrder });
-    editor.addChordAtBeat(0.0, chordB, { Degree::II, chordB.popularityOrder }); // same whole-bar cell, chordA fully occupies it
+    editor.addChordAtBeat(0.0, chordA);
+    editor.addChordAtBeat(0.0, chordB); // same whole-bar cell, chordA fully occupies it
 
     CHECK(editor.getChordBlockCount() == 1);
     CHECK(editor.getNoteCount() == expectedCountB);
@@ -287,27 +285,34 @@ TEST_CASE("MidiEditor: a chord dropped on a partially-occupied beat takes only t
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+    editor.addChordAtBeat(0.0, getTestChord());
     REQUIRE(editor.getChordBlockCount() == 1);
     REQUIRE(*editor.getChordBlockStartBeat(0) == Catch::Approx(0.0));
 
-    // There's no chord-block resize gesture (only move) - so the way to reach a genuine partial
-    // overlap is to drag the existing block half a bar (2 beats) to the right, so it now straddles
-    // bar cells [0,4) and [4,8), leaving the first half of [0,4) free for the next drop to claim.
-    const auto chordLaneY = 400.f - kScrollbarThickness - kChordLaneHeight + 4.f;
-    const juce::Point<float> start { beatToX(0.0) + 1.f, chordLaneY };
-    const juce::Point<float> dragged { start.x + kPixelsPerBeat * 2.f, chordLaneY };
-    editor.mouseDown(makeMouseEvent(editor, start));
+    // There's no chord-block drag gesture anymore (the lane is purely derived) - so the way to reach
+    // a genuine partial overlap is to group-move the dropped chord's own notes half a bar (2 beats)
+    // to the right, so they now straddle bar cells [0,4) and [4,8), leaving the first half of [0,4)
+    // free for the next drop to claim.
+    marqueeSelect(editor, { 700.f, 300.f }, { 20.f, 10.f }); // selects every note of the dropped chord
+    const auto anchorPitch = *editor.getNoteMidiPitch(0);
+    const juce::Point<float> dragStart { beatToX(0.0) + 60.f, pitchToY(anchorPitch) + 1.f }; // note 0's body
+    const juce::Point<float> dragged { dragStart.x + kPixelsPerBeat * 2.f, dragStart.y };
+    editor.mouseDown(makeMouseEvent(editor, dragStart));
     editor.mouseDrag(makeMouseEvent(editor, dragged));
     editor.mouseUp(makeMouseEvent(editor, dragged));
 
+    REQUIRE(editor.getChordBlockCount() == 1);
     REQUIRE(*editor.getChordBlockStartBeat(0) == Catch::Approx(2.0));
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord())); // targets cell [0,4) - [2,4) of it is now occupied
+    editor.addChordAtBeat(0.0, getTestChord()); // targets cell [0,4) - [2,4) of it is now occupied
 
+    // _chordBlocks is always rebuilt sorted by startBeat, so the newly-added (shorter, earlier)
+    // chord ends up at index 0 and the previously-moved one at index 1.
     REQUIRE(editor.getChordBlockCount() == 2);
-    CHECK(*editor.getChordBlockStartBeat(1) == Catch::Approx(0.0));
-    CHECK(*editor.getChordBlockLengthBeats(1) == Catch::Approx(2.0));
+    CHECK(*editor.getChordBlockStartBeat(0) == Catch::Approx(0.0));
+    CHECK(*editor.getChordBlockLengthBeats(0) == Catch::Approx(2.0));
+    CHECK(*editor.getChordBlockStartBeat(1) == Catch::Approx(2.0));
+    CHECK(*editor.getChordBlockLengthBeats(1) == Catch::Approx(4.0));
 }
 
 TEST_CASE("MidiEditor::clear empties both notes and chord blocks", "[MidiEditor]")
@@ -315,7 +320,7 @@ TEST_CASE("MidiEditor::clear empties both notes and chord blocks", "[MidiEditor]
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+    editor.addChordAtBeat(0.0, getTestChord());
     REQUIRE(editor.getNoteCount() > 0);
     REQUIRE(editor.getChordBlockCount() > 0);
 
@@ -325,31 +330,37 @@ TEST_CASE("MidiEditor::clear empties both notes and chord blocks", "[MidiEditor]
     CHECK(editor.getChordBlockCount() == 0);
 }
 
-TEST_CASE("MidiEditor::getState/restoreState round-trips notes, chord blocks, and their sourceSlot exactly", "[MidiEditor]")
+TEST_CASE("MidiEditor::getState/restoreState round-trips notes exactly, and re-detects the chord lane from them", "[MidiEditor]")
 {
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    const auto& chord = getTestChord();
-    editor.addChordAtBeat(0.0, chord, testSlot(chord));
-    editor.addChordAtBeat(kBeatsPerBar, chord, { Degree::V, chord.popularityOrder });
+    // Two distinct real chords - MidiEditorState no longer carries chord-block/slot data at all
+    // (see theory::MidiEditorState), so this test's own job is confirming each one's identity comes
+    // back correctly re-derived from its own notes, not that some tag round-tripped unchanged.
+    const auto& chordI = getTestChord();
+    const auto& chordV = ChordDatabase::getInstance().get(Key::C, Scale::Major).findDegree(Degree::V)->chords.front();
+    editor.addChordAtBeat(0.0, chordI);
+    editor.addChordAtBeat(kBeatsPerBar, chordV);
 
     const auto state = editor.getState();
     REQUIRE(state.notes.size() == static_cast<std::size_t>(editor.getNoteCount()));
-    REQUIRE(state.chordBlocks.size() == 2);
+    REQUIRE(editor.getChordBlockCount() == 2);
 
     MidiEditor restored("test-midi-editor-restored");
     restored.setBounds(0, 0, 800, 400);
     restored.restoreState(state);
 
     CHECK(restored.getNoteCount() == editor.getNoteCount());
-    CHECK(restored.getChordBlockCount() == editor.getChordBlockCount());
     CHECK(restored.getState() == state);
 
+    // Restored defaults to the same Key::C/Scale::Major as a freshly-constructed MidiEditor, so
+    // detection finds the same two chords again.
+    REQUIRE(restored.getChordBlockCount() == 2);
     REQUIRE(restored.getChordBlockSlot(0).has_value());
-    CHECK(*restored.getChordBlockSlot(0) == testSlot(chord));
+    CHECK(*restored.getChordBlockSlot(0) == testSlot(chordI));
     REQUIRE(restored.getChordBlockSlot(1).has_value());
-    CHECK(*restored.getChordBlockSlot(1) == ProgressionSlot { Degree::V, chord.popularityOrder });
+    CHECK(*restored.getChordBlockSlot(1) == ProgressionSlot { Degree::V, chordV.popularityOrder });
 }
 
 TEST_CASE("MidiEditor::onContentChanged fires on add/move/resize/delete but not on a plain click", "[MidiEditor]")
@@ -360,7 +371,7 @@ TEST_CASE("MidiEditor::onContentChanged fires on add/move/resize/delete but not 
     RecordingListener listener;
     editor.addListener(&listener);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+    editor.addChordAtBeat(0.0, getTestChord());
     CHECK(listener.contentChangedCount == 1);
 
     // A completed drag (move the note) fires once more.
@@ -391,7 +402,7 @@ TEST_CASE("MidiEditor: loop bounds auto-compute to the first/last note's bar bou
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord())); // bar 0: [0,4)
+    editor.addChordAtBeat(0.0, getTestChord()); // bar 0: [0,4)
 
     // A manually-added note past that, at beat 6 (bar 1's territory: [4,8)), 1 beat long by
     // default - the loop must stretch to cover it too. (Kept within the 800px-wide test bounds'
@@ -408,7 +419,7 @@ TEST_CASE("MidiEditor: a manually-resized loop no longer moves when content chan
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord())); // loop auto-tracks to [0,4)
+    editor.addChordAtBeat(0.0, getTestChord()); // loop auto-tracks to [0,4)
     REQUIRE(editor.getLoopEndBeat() == Catch::Approx(4.0));
 
     // Drag the loop's end handle (in the ruler band, y within [0,kRulerHeight]) one beat later.
@@ -423,7 +434,7 @@ TEST_CASE("MidiEditor: a manually-resized loop no longer moves when content chan
 
     // Adding a chord far enough out that auto-tracking (if it were still active) would expand the
     // loop to bar 4 ([12,16)) - the manual resize must have opted out of that.
-    editor.addChordAtBeat(3.0 * kBeatsPerBar, getTestChord(), testSlot(getTestChord()));
+    editor.addChordAtBeat(3.0 * kBeatsPerBar, getTestChord());
 
     CHECK(editor.getLoopStartBeat() == Catch::Approx(0.0));
     CHECK(editor.getLoopEndBeat() == Catch::Approx(5.0));
@@ -449,7 +460,7 @@ TEST_CASE("MidiEditor::onPlaybackStateChanged fires on start and stop", "[MidiEd
     MidiEditor editor("test-midi-editor", &player);
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord()));
+    editor.addChordAtBeat(0.0, getTestChord());
 
     RecordingListener listener;
     editor.addListener(&listener);
@@ -472,11 +483,12 @@ TEST_CASE("MidiEditor: double-clicking the ruler zooms/scrolls so the loop exact
     MidiEditor editor("test-midi-editor");
     editor.setBounds(0, 0, 800, 400);
 
-    editor.addChordAtBeat(0.0, getTestChord(), testSlot(getTestChord())); // loop auto-tracks to [0,4)
+    editor.addChordAtBeat(0.0, getTestChord()); // loop auto-tracks to [0,4)
     REQUIRE(editor.getLoopStartBeat() == Catch::Approx(0.0));
     REQUIRE(editor.getLoopEndBeat() == Catch::Approx(4.0));
 
     const auto noteCountBefore = editor.getNoteCount();
+    const auto anchorPitch = *editor.getNoteMidiPitch(0); // spans the whole bar, like every tone of a fresh full-cell drop
 
     // Double-clicking the ruler (y within [0,kRulerHeight]) must not fall through to the
     // empty-space "add a note" behavior.
@@ -485,16 +497,194 @@ TEST_CASE("MidiEditor: double-clicking the ruler zooms/scrolls so the loop exact
     CHECK(editor.getNoteCount() == noteCountBefore);
 
     // The content area is 800 - kGutterWidth - kScrollbarThickness = 752px wide; zoomed to exactly
-    // fit the 4-beat loop, that's 188px/beat. Double-clicking the middle of the chord block's own
-    // bar (beat 2, now at x = kGutterWidth + 2*188 = 416) in the chord lane must hit and delete it
-    // - at the old default zoom (80px/beat) that same screen x would land around beat 4.7, well
-    // outside the block, so this only passes if the zoom genuinely took effect.
+    // fit the 4-beat loop, that's 188px/beat. Double-clicking the middle of bar 0 (beat 2, now at
+    // x = kGutterWidth + 2*188 = 416) at note 0's own row must hit and delete it - at the old
+    // default zoom (80px/beat) that same screen x would land around beat 4.7, past note 0's own
+    // [0,4) extent, so this only passes if the zoom genuinely took effect.
     constexpr float kExpectedPixelsPerBeat = (800.f - kGutterWidth - kScrollbarThickness) / 4.f;
-    const auto chordLaneY = 400.f - kScrollbarThickness - kChordLaneHeight + 4.f;
-    const juce::Point<float> midBarPos { kGutterWidth + 2.f * kExpectedPixelsPerBeat, chordLaneY };
+    const juce::Point<float> midBarPos { kGutterWidth + 2.f * kExpectedPixelsPerBeat, pitchToY(anchorPitch) + 1.f };
     editor.mouseDoubleClick(makeMouseEvent(editor, midBarPos));
 
+    CHECK(editor.getNoteCount() == noteCountBefore - 1);
+}
+
+TEST_CASE("MidiEditor: chord detection clusters notes by onset proximity, not identical start beat, so a staggered (arpeggiated) chord is still detected as one", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    // C major triad (C4,E4,G4 - the same voicing getTestChord() itself produces), entered as a
+    // staggered/arpeggiated run rather than a single simultaneous strike: each note's onset is a
+    // quarter-beat after the previous one - well within the onset-clustering tolerance.
+    addNoteAt(editor, 1.0, 60);  // onset 1.0
+    addNoteAt(editor, 1.25, 64); // onset 1.25 - within tolerance of note 0's onset
+    addNoteAt(editor, 1.5, 67);  // onset 1.5 - within tolerance of note 1's onset
+    REQUIRE(editor.getNoteCount() == 3);
+
+    REQUIRE(editor.getChordBlockCount() == 1);
+    CHECK(*editor.getChordBlockStartBeat(0) == Catch::Approx(1.0));
+    CHECK(*editor.getChordBlockLengthBeats(0) == Catch::Approx(1.5)); // spans [1.0, 2.5)
+    REQUIRE(editor.getChordBlockSlot(0).has_value());
+    CHECK(*editor.getChordBlockSlot(0) == testSlot(getTestChord()));
+}
+
+TEST_CASE("MidiEditor: chord detection does not cluster notes whose onsets are far enough apart", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 60); // onset 1.0
+    addNoteAt(editor, 3.0, 64); // onset 3.0 - 2 beats later, well beyond the onset-clustering tolerance
+
+    // Neither note is a valid chord alone (single notes never match a cataloged voicing), and
+    // proving they weren't clustered into one group either is the point of this test.
     CHECK(editor.getChordBlockCount() == 0);
+}
+
+TEST_CASE("MidiEditor: a long/sustained note ringing into the next chord's onset does not bridge the two into one group", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    const auto& chordI = getTestChord();
+    const auto& chordV = ChordDatabase::getInstance().get(Key::C, Scale::Major).findDegree(Degree::V)->chords.front();
+
+    editor.addChordAtBeat(0.0, chordI); // full-bar drop: every tone onsets at beat 0, length 4
+    REQUIRE(editor.getChordBlockCount() == 1);
+
+    // Stretch chordI's own G tone (index 2 - shares pitch class 7 with chordV's own bass note, G,
+    // so counting it toward chordV's boundary below doesn't change chordV's resulting pitch-class
+    // set at all) so it keeps sounding, like a pedal tone, well past where chordV's onset lands -
+    // boundaries must key off onset time, not how long any one note happens to still be ringing.
+    const auto pitch = *editor.getNoteMidiPitch(2);
+    const auto rightEdgeX = beatToX(*editor.getNoteStartBeat(2) + *editor.getNoteLengthBeats(2));
+    const auto y = pitchToY(pitch) + 1.f;
+    const juce::Point<float> dragStart { rightEdgeX - 3.f, y };
+    const juce::Point<float> dragged { dragStart.x + 4.f * kPixelsPerBeat, y };
+    editor.mouseDown(makeMouseEvent(editor, dragStart));
+    editor.mouseDrag(makeMouseEvent(editor, dragged));
+    editor.mouseUp(makeMouseEvent(editor, dragged));
+    REQUIRE(*editor.getNoteLengthBeats(2) == Catch::Approx(8.0)); // now sounds through [0,8)
+
+    // Place chordV's own tones directly (not via addChordAtBeat, whose cell-collision logic would
+    // treat the just-stretched note as fully occupying this cell) - their onset (beat 4) sits well
+    // inside the stretched note's still-sounding span.
+    for (const auto midiNote : NoteConvertor::voiceChordCloseToMiddleC(chordV))
+        addNoteAt(editor, kBeatsPerBar, midiNote);
+
+    // Still two distinct, correctly-detected chords - the stretched note's long sustain must not
+    // have created a spurious third boundary or corrupted either chord's identity.
+    REQUIRE(editor.getChordBlockCount() == 2);
+    REQUIRE(editor.getChordBlockSlot(0).has_value());
+    CHECK(*editor.getChordBlockSlot(0) == testSlot(chordI));
+    REQUIRE(editor.getChordBlockSlot(1).has_value());
+    CHECK(*editor.getChordBlockSlot(1) == ProgressionSlot { Degree::V, chordV.popularityOrder });
+}
+
+TEST_CASE("MidiEditor: a note still ringing from an earlier chord contributes to a later chord's detected identity", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    // A lone D3 pedal tone, onset 0, stretched to sustain well past beat 2. Pitches here are kept
+    // at/below kInitialTopMidiNote (67) - anything higher renders off the top of the default view,
+    // outside _contentArea, and mouseDoubleClick silently no-ops there (see addNoteAt's own note).
+    addNoteAt(editor, 0.0, 50); // D3, default length 1.0
+    const auto rightEdgeX = beatToX(0.0 + 1.0);
+    const auto y = pitchToY(50) + 1.f;
+    const juce::Point<float> dragStart { rightEdgeX - 3.f, y };
+    const juce::Point<float> dragged { dragStart.x + 3.f * kPixelsPerBeat, y }; // now 4 beats long, [0,4)
+    editor.mouseDown(makeMouseEvent(editor, dragStart));
+    editor.mouseDrag(makeMouseEvent(editor, dragged));
+    editor.mouseUp(makeMouseEvent(editor, dragged));
+    REQUIRE(editor.getChordBlockCount() == 0); // a lone note is never a chord by itself
+
+    // F3 and A3 alone (a major third apart - not a cataloged power-chord interval) at onset 2 -
+    // by themselves they don't match anything either...
+    addNoteAt(editor, 2.0, 53); // F3
+    addNoteAt(editor, 2.0, 57); // A3
+
+    // ...but combined with the still-ringing D3 pedal tone, they complete a D minor triad.
+    REQUIRE(editor.getChordBlockCount() == 1);
+    CHECK(*editor.getChordBlockStartBeat(0) == Catch::Approx(2.0));
+    REQUIRE(editor.getChordBlockSlot(0).has_value());
+    CHECK(*editor.getChordBlockSlot(0) == ProgressionSlot { Degree::II, 1 }); // "Dm", C major's degree II front entry
+}
+
+TEST_CASE("MidiEditor: a chord that already stands complete on its own is not corrupted by an earlier chord's ordinary trailing overlap", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    const auto& chordI = getTestChord(); // C major triad: 60, 64, 67
+    const auto& chordV = ChordDatabase::getInstance().get(Key::C, Scale::Major).findDegree(Degree::V)->chords.front();
+
+    editor.addChordAtBeat(0.0, chordI); // full-bar drop: every tone onsets at beat 0, length 4 - so
+                                         // every one of its notes is still sounding well past chordV's
+                                         // onset below (an everyday consequence of a full-bar chord
+                                         // immediately followed by a shorter one, not a deliberate pedal).
+    REQUIRE(editor.getChordBlockCount() == 1);
+
+    // chordV's own tones, placed directly at onset 2 - a complete triad on their own. Two of
+    // chordI's three still-sounding pitch classes (C, E) aren't part of chordV at all - if they got
+    // pulled in just because they're technically still ringing, the combined 6-note set wouldn't
+    // match anything; chordV must be detected purely from its own notes since those alone already
+    // complete a match.
+    for (const auto midiNote : NoteConvertor::voiceChordCloseToMiddleC(chordV))
+        addNoteAt(editor, 2.0, midiNote);
+
+    REQUIRE(editor.getChordBlockCount() == 2);
+    REQUIRE(editor.getChordBlockSlot(0).has_value());
+    CHECK(*editor.getChordBlockSlot(0) == testSlot(chordI));
+    REQUIRE(editor.getChordBlockSlot(1).has_value());
+    CHECK(*editor.getChordBlockSlot(1) == ProgressionSlot { Degree::V, chordV.popularityOrder });
+}
+
+TEST_CASE("MidiEditor: a staircase of closely-spaced onsets does not transitively bridge two chords whose true onsets are far apart", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    const auto& chordI = getTestChord(); // C major triad: 60, 64, 67
+    const auto& chordV = ChordDatabase::getInstance().get(Key::C, Scale::Major).findDegree(Degree::V)->chords.front();
+
+    // chordI entered as a gradual arpeggio (onsets 0.0, 0.25, 0.5 - each only a snap-step from the
+    // last), immediately followed by chordV at onset 0.75. Chaining onset-to-onset (comparing each
+    // note only to its immediate predecessor) would bridge every one of these into a single group,
+    // since every CONSECUTIVE gap is <=0.25 - even though chordI's own first onset (0.0) and
+    // chordV's onset (0.75) are well beyond the clustering tolerance from each other. Each arpeggio
+    // note is shrunk to a quarter-beat so none of them is still ringing at chordV's onset - this
+    // test is specifically about boundary-clustering in isolation, not about a still-sounding note
+    // contributing to a later chord (see the dedicated "still ringing" tests for that).
+    const auto chordINotes = NoteConvertor::voiceChordCloseToMiddleC(chordI);
+    const double arpeggioOnsets[] = { 0.0, 0.25, 0.5 };
+    for (int i = 0; i < 3; ++i)
+    {
+        const auto onset = arpeggioOnsets[i];
+        addNoteAt(editor, onset, chordINotes[static_cast<std::size_t>(i)]);
+
+        const auto rightEdgeX = beatToX(onset + 1.0); // default note length is 1 beat
+        const auto y = pitchToY(chordINotes[static_cast<std::size_t>(i)]) + 1.f;
+        const juce::Point<float> dragStart { rightEdgeX - 3.f, y };
+        const juce::Point<float> dragged { dragStart.x - 0.75f * kPixelsPerBeat, y }; // shrink to 0.25 beats
+        editor.mouseDown(makeMouseEvent(editor, dragStart));
+        editor.mouseDrag(makeMouseEvent(editor, dragged));
+        editor.mouseUp(makeMouseEvent(editor, dragged));
+        REQUIRE(*editor.getNoteLengthBeats(i) == Catch::Approx(0.25));
+    }
+
+    for (const auto midiNote : NoteConvertor::voiceChordCloseToMiddleC(chordV))
+        addNoteAt(editor, 0.75, midiNote);
+
+    REQUIRE(editor.getChordBlockCount() == 2);
+    REQUIRE(editor.getChordBlockStartBeat(0).has_value());
+    CHECK(*editor.getChordBlockStartBeat(0) == Catch::Approx(0.0));
+    REQUIRE(editor.getChordBlockSlot(0).has_value());
+    CHECK(*editor.getChordBlockSlot(0) == testSlot(chordI));
+    REQUIRE(editor.getChordBlockStartBeat(1).has_value());
+    CHECK(*editor.getChordBlockStartBeat(1) == Catch::Approx(0.75));
+    REQUIRE(editor.getChordBlockSlot(1).has_value());
+    CHECK(*editor.getChordBlockSlot(1) == ProgressionSlot { Degree::V, chordV.popularityOrder });
 }
 
 TEST_CASE("MidiEditor: clicking an unselected note selects only it; clicking a different note replaces the selection", "[MidiEditor][MultiSelect]")

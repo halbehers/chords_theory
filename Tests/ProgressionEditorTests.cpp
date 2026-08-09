@@ -1,8 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
-#include <string>
-
 #include "Audio/ProgressionPlayer.h"
 #include "Component/MidiEditor.h"
 #include "Component/ProgressionEditor.h"
@@ -22,13 +20,14 @@ using theory::Scale;
 
 namespace
 {
-    Chord makeChord(const std::string& symbol, int popularityOrder)
+    // A real per-degree chord from C Major's own catalog - chord blocks are now always detected
+    // from actual placed notes (see theory::ChordIdentifier), so a bare symbol/popularityOrder stub
+    // with no real Chord::notes (like this file's old makeChord() helper) would place zero notes
+    // and never be detected at all. ProgressionEditor's own MidiEditor defaults to Key::C/Scale::
+    // Major, so these round-trip back through detection unchanged.
+    const Chord& realChord(Degree degree)
     {
-        Chord chord;
-        chord.symbol = symbol;
-        chord.readableName = symbol;
-        chord.popularityOrder = popularityOrder;
-        return chord;
+        return ChordDatabase::getInstance().get(Key::C, Scale::Major).findDegree(degree)->chords.front();
     }
 
     struct RecordingListener : public ProgressionEditor::Listener
@@ -61,9 +60,9 @@ namespace
 
 TEST_CASE("ProgressionEditor::loadPreset places one chord block per bar, in order", "[ProgressionEditor]")
 {
-    const Chord chordI = makeChord("C", 1);
-    const Chord chordV = makeChord("G", 1);
-    const Chord chordVI = makeChord("Am", 1);
+    const Chord& chordI = realChord(Degree::I);
+    const Chord& chordV = realChord(Degree::V);
+    const Chord& chordVI = realChord(Degree::VI);
 
     ProgressionEditor sequencer("test-sequencer",
         [&](const ProgressionSlot& slot) -> const Chord*
@@ -89,8 +88,8 @@ TEST_CASE("ProgressionEditor::loadPreset places one chord block per bar, in orde
 
 TEST_CASE("ProgressionEditor::loadPreset leaves an unresolvable slot's bar empty without shifting later slots", "[ProgressionEditor]")
 {
-    const Chord chordI = makeChord("C", 1);
-    const Chord chordIV = makeChord("F", 1);
+    const Chord& chordI = realChord(Degree::I);
+    const Chord& chordIV = realChord(Degree::IV);
 
     ProgressionEditor sequencer("test-sequencer",
         [&](const ProgressionSlot& slot) -> const Chord*
@@ -125,9 +124,10 @@ TEST_CASE("ProgressionEditor::loadPreset leaves an unresolvable slot's bar empty
     CHECK(populated[1].degree == Degree::IV);
 }
 
-TEST_CASE("ProgressionEditor::getPopulatedSlots reports each block's frozen degree/popularityOrder, not a live-re-resolved one", "[ProgressionEditor]")
+TEST_CASE("ProgressionEditor::getPopulatedSlots derives each block's degree/popularityOrder from its placed notes, not a live re-resolution of the ChordResolver", "[ProgressionEditor]")
 {
-    Chord currentForI = makeChord("Cmaj7", 2);
+    const auto& cMajorDegreeI = ChordDatabase::getInstance().get(Key::C, Scale::Major).findDegree(Degree::I)->chords;
+    Chord currentForI = cMajorDegreeI[1]; // popularityOrder 2, "Cmaj7"
 
     ProgressionEditor sequencer("test-sequencer",
         [&currentForI](const ProgressionSlot& slot) -> const Chord*
@@ -135,29 +135,30 @@ TEST_CASE("ProgressionEditor::getPopulatedSlots reports each block's frozen degr
             return slot.degree == Degree::I ? &currentForI : nullptr;
         });
 
-    sequencer.addChordAtBeat(0.0, currentForI, ProgressionSlot { Degree::I, currentForI.popularityOrder });
+    sequencer.addChordAtBeat(0.0, currentForI);
 
-    // Change what the resolver would now return for degree I - a live-tracking model would pick
-    // this up on the next getPopulatedSlots() call; the frozen-at-drop-time model must not.
-    currentForI = makeChord("C", 1);
+    // Change what the resolver would now return for degree I - the already-placed notes are
+    // unaffected, and detection re-derives identity from THEM, not from re-invoking the resolver, so
+    // this has no effect on the block that's already there.
+    currentForI = cMajorDegreeI.front(); // popularityOrder 1, the plain "C" triad
 
     const auto populated = sequencer.getPopulatedSlots();
     REQUIRE(populated.size() == 1);
     CHECK(populated.front().degree == Degree::I);
-    CHECK(populated.front().popularityOrder == 2); // the value at drop time, not the now-current 1
+    CHECK(populated.front().popularityOrder == 2); // still Cmaj7's value, from the notes actually placed
 }
 
 TEST_CASE("ProgressionEditor::getPopulatedSlots returns chord blocks sorted by their position, not insertion order", "[ProgressionEditor]")
 {
-    const Chord chordI = makeChord("C", 1);
-    const Chord chordV = makeChord("G", 1);
+    const Chord& chordI = realChord(Degree::I);
+    const Chord& chordV = realChord(Degree::V);
 
     ProgressionEditor sequencer("test-sequencer",
         [](const ProgressionSlot&) -> const Chord* { return nullptr; });
 
     // Insert the later bar's chord first.
-    sequencer.addChordAtBeat(MidiEditor::kBeatsPerBar, chordV, ProgressionSlot { Degree::V, chordV.popularityOrder });
-    sequencer.addChordAtBeat(0.0, chordI, ProgressionSlot { Degree::I, chordI.popularityOrder });
+    sequencer.addChordAtBeat(MidiEditor::kBeatsPerBar, chordV);
+    sequencer.addChordAtBeat(0.0, chordI);
 
     const auto populated = sequencer.getPopulatedSlots();
     REQUIRE(populated.size() == 2);
@@ -191,14 +192,14 @@ TEST_CASE("ProgressionEditor: a chord file dropped on the MidiEditor bubbles up 
 
 TEST_CASE("ProgressionEditor: a MidiEditor content change bubbles up to this component's own listeners", "[ProgressionEditor]")
 {
-    const Chord chord = makeChord("C", 1);
+    const Chord& chord = realChord(Degree::I);
     ProgressionEditor sequencer("test-sequencer",
         [](const ProgressionSlot&) -> const Chord* { return nullptr; });
 
     RecordingListener listener;
     sequencer.addListener(&listener);
 
-    sequencer.addChordAtBeat(0.0, chord, ProgressionSlot { Degree::I, chord.popularityOrder });
+    sequencer.addChordAtBeat(0.0, chord);
 
     CHECK(listener.contentChangedCount == 1);
 
@@ -217,7 +218,7 @@ TEST_CASE("ProgressionEditor: clicking the play button toggles playback and swap
         &player);
     sequencer.setBounds(0, 0, 800, 400);
 
-    sequencer.addChordAtBeat(0.0, chord, ProgressionSlot { Degree::I, chord.popularityOrder });
+    sequencer.addChordAtBeat(0.0, chord);
 
     auto* playButton = dynamic_cast<nelement::SVGButton*>(sequencer.findChildWithID("progression-play-button"));
     REQUIRE(playButton != nullptr);

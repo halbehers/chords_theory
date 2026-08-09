@@ -137,9 +137,9 @@ TEST_CASE("writeProgressionMidiFile with an empty slot list still produces a rea
 TEST_CASE("writeMidiEditorContentFile places each note at its exact startBeat/lengthBeats tick position, not measure-quantized", "[MidiExporter]")
 {
     const std::vector<MidiEditorNoteState> notes = {
-        { 60, 0.0, 1.0, -1 },  // C4, beat 0-1
-        { 64, 0.5, 2.5, -1 },  // E4, beat 0.5-3 - deliberately off the bar grid
-        { 67, 3.0, 0.25, -1 }, // G4, beat 3-3.25
+        { 60, 0.0, 1.0 },  // C4, beat 0-1
+        { 64, 0.5, 2.5 },  // E4, beat 0.5-3 - deliberately off the bar grid
+        { 67, 3.0, 0.25 }, // G4, beat 3-3.25
     };
 
     const auto file = MidiExporter::writeMidiEditorContentFile(notes);

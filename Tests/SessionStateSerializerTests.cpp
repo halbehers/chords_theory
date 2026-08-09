@@ -4,9 +4,6 @@
 
 using theory::Degree;
 using theory::Key;
-using theory::MidiEditorChordBlockState;
-using theory::MidiEditorNoteState;
-using theory::ProgressionSlot;
 using theory::Scale;
 using theory::SessionState;
 using theory::SessionStateSerializer;
@@ -21,15 +18,10 @@ TEST_CASE("SessionStateSerializer round-trips a fully populated session through 
         { Degree::IV, "Gb7" },
         { Degree::V, "Ab7" },
     };
-    state.progressionEditorState.nextChordBlockId = 2;
     state.progressionEditorState.notes = {
-        { 60, 0.0, 4.0, 0 },
-        { 64, 0.0, 4.0, 0 },
-        { 67, 4.0, 2.5, 1 }, // deliberately off the bar grid, to confirm exact doubles survive
-    };
-    state.progressionEditorState.chordBlocks = {
-        { 0, "Dbm", 0.0, 4.0, ProgressionSlot { Degree::I, 1 } },
-        { 1, "Gb7", 4.0, 4.0, ProgressionSlot { Degree::IV, 2 } },
+        { 60, 0.0, 4.0 },
+        { 64, 0.0, 4.0 },
+        { 67, 4.0, 2.5 }, // deliberately off the bar grid, to confirm exact doubles survive
     };
 
     const auto tree = SessionStateSerializer::toValueTree(state);
@@ -44,8 +36,7 @@ TEST_CASE("SessionStateSerializer round-trips through binary ValueTree serializa
     state.key = Key::G;
     state.scale = Scale::MinorBlues;
     state.degreeVoicings = { { Degree::I, "G7" }, { Degree::IV, "C7" }, { Degree::V, "D7" } };
-    state.progressionEditorState.notes = { { 55, 0.0, 4.0, 0 } };
-    state.progressionEditorState.chordBlocks = { { 0, "G7", 0.0, 4.0, ProgressionSlot { Degree::I, 1 } } };
+    state.progressionEditorState.notes = { { 55, 0.0, 4.0 } };
 
     const auto tree = SessionStateSerializer::toValueTree(state);
 
@@ -82,21 +73,11 @@ TEST_CASE("SessionStateSerializer skips malformed degree/key/scale entries inste
     badDegree.setProperty("chordSymbol", "Whatever", nullptr);
     tree.getChildWithName("DegreeVoicings").appendChild(badDegree, nullptr);
 
-    juce::ValueTree badChordBlock("ChordBlock");
-    badChordBlock.setProperty("id", 0, nullptr);
-    badChordBlock.setProperty("label", "Bad", nullptr);
-    badChordBlock.setProperty("startBeat", 0.0, nullptr);
-    badChordBlock.setProperty("lengthBeats", 4.0, nullptr);
-    badChordBlock.setProperty("degree", "XIV", nullptr);
-    badChordBlock.setProperty("popularityOrder", 1, nullptr);
-    tree.getChildWithName("MidiEditorState").getChildWithName("ChordBlocks").appendChild(badChordBlock, nullptr);
-
     const auto restored = SessionStateSerializer::fromValueTree(tree);
 
-    // Falls back to the default Key/Scale rather than throwing, and the malformed entries are
-    // simply absent from the result (not aborting the whole parse).
+    // Falls back to the default Key/Scale rather than throwing, and the malformed entry is simply
+    // absent from the result (not aborting the whole parse).
     CHECK(restored.key == Key::C);
     CHECK(restored.scale == Scale::Major);
     CHECK(restored.degreeVoicings.empty());
-    CHECK(restored.progressionEditorState.chordBlocks.empty());
 }

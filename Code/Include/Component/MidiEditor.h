@@ -7,18 +7,22 @@
 
 #include "Audio/ProgressionPlayer.h"
 #include "Theory/Chord.h"
+#include "Theory/Key.h"
 #include "Theory/MidiEditorState.h"
 #include "Theory/ProgressionSlot.h"
+#include "Theory/Scale.h"
 
 namespace component
 {
 
 // A piano-roll MIDI note editor: a scrollable/zoomable pitch grid (pitch-labeled gutter on the
-// left, beat/bar ruler on top) with a "chord lane" strip along the bottom. Dropping a ChordCard's
-// exported .mid file onto it (see AppLayout's in-flight-drag-map resolution, the same mechanism
-// ProgressionSlotView used) adds a labeled chord block to the lane and splits the chord into
-// individually movable/resizable note blocks in the grid above, via addChordAtBeat(). Owns its own
-// in-memory note/chord-block state - getState()/restoreState() bridge that to/from
+// left, beat/bar ruler on top) with a read-only "chord lane" strip along the bottom. Dropping a
+// ChordCard's exported .mid file onto it (see AppLayout's in-flight-drag-map resolution, the same
+// mechanism ProgressionSlotView used) splits the chord into individually movable/resizable note
+// blocks in the grid above, via addChordAtBeat(). The chord lane itself is never authored directly -
+// it's entirely derived from whatever notes currently exist, via recomputeChordBlocksFromNotes()
+// (see ChordBlockData below), and has no drag/delete gesture of its own; it simply reflects the
+// notes. Owns its own in-memory note state - getState()/restoreState() bridge that to/from
 // theory::MidiEditorState, the pure-data shape Theory::SessionState (DAW project persistence) and
 // Theory::MidiExporter (exact-content drag export) both consume; ProgressionEditor is the only
 // other component that reaches into this class directly (for presets - see its own loadPreset/
@@ -69,18 +73,22 @@ public:
     void paint(juce::Graphics&) override;
     void resized() override;
 
-    // Snaps to the whole-bar (4-beat) cell startBeat falls in, then splits chord into N note
-    // blocks (via theory::NoteConvertor::voiceChordCloseToMiddleC) plus one chord-lane block
-    // (chord.readableName), spanning whatever's actually free in that cell: the full bar if
-    // empty, the remaining gap if another block partially overlaps it, or the full bar again
-    // (replacing that block and the notes it originally created) if another block already fully
-    // occupies it. A no-op if the cell has no free room at all. sourceSlot is frozen onto the new
-    // chord block (see ChordBlockData::sourceSlot) - never re-resolved later.
-    void addChordAtBeat(double startBeat, const theory::Chord& chord, const theory::ProgressionSlot& sourceSlot);
+    // Snaps to the whole-bar (4-beat) cell startBeat falls in, then splits chord into N note blocks
+    // (via theory::NoteConvertor::voiceChordCloseToMiddleC), spanning whatever's actually free in
+    // that cell: the full bar if empty, the remaining gap if existing notes partially overlap it, or
+    // the full bar again (replacing every note overlapping the cell) if it's already fully occupied.
+    // A no-op if the cell has no free room at all. Never touches _chordBlocks directly - the lane
+    // relabels itself via the same notifyContentChanged()-driven recompute as any other edit.
+    void addChordAtBeat(double startBeat, const theory::Chord& chord);
 
     // Resets to empty - used before loading a preset or restoring session state, both of which
     // wholesale-replace the current content rather than merge into it.
     void clear();
+
+    // The Key/Scale the chord lane detects against (see ChordBlockData/recomputeChordBlocksFromNotes
+    // below) - defaults to Key::C/Scale::Major. Setting it re-labels the lane immediately against
+    // whatever notes are already present, without otherwise touching note content.
+    void setKeyAndScale(theory::Key key, theory::Scale scale);
 
     [[nodiscard]] int getNoteCount() const { return static_cast<int>(_notes.size()); }
     [[nodiscard]] int getChordBlockCount() const { return static_cast<int>(_chordBlocks.size()); }
@@ -137,23 +145,22 @@ private:
         int midiNote = 60;
         double startBeat = 0.0;
         double lengthBeats = 1.0;
-        int sourceChordId = -1; // which addChordAtBeat() call created this note; -1 = created
-                                 // directly (double-click) or its origin chord block was replaced
     };
 
+    // One detected chord in the lane - always freshly derived by recomputeChordBlocksFromNotes(),
+    // never authored/moved/deleted directly. label/detectedSlot come straight from whichever
+    // ChordDatabase entry matched the note group's pitch content under the current Key/Scale (see
+    // theory::ChordIdentifier) - there is no "frozen at drop time" concept anymore, a block simply
+    // stops existing the moment its notes no longer match anything.
     struct ChordBlockData
     {
-        int id = -1;             // stable id from a monotonic counter - exists only so a later
-                                  // full-beat chord drop can find and remove this block's own
-                                  // notes when replacing it; not a live editing link
-        std::string label;       // frozen snapshot of Chord::readableName at drop time
+        std::string label;
         double startBeat = 0.0;
         double lengthBeats = 1.0;
-        theory::ProgressionSlot sourceSlot; // frozen at drop time - degree + the resolved chord's
-                                             // popularityOrder; never re-resolved live afterward
+        theory::ProgressionSlot detectedSlot;
     };
 
-    enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, MoveChordBlock, ResizeLoopStart, ResizeLoopEnd, MarqueeSelect };
+    enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, ResizeLoopStart, ResizeLoopEnd, MarqueeSelect };
 
     void timerCallback() override; // drag-triggered auto-scroll, and while playing, playhead repaint
 
@@ -176,22 +183,29 @@ private:
 
     // hit-testing
     [[nodiscard]] int hitTestNote(juce::Point<float>) const;
-    [[nodiscard]] int hitTestChordBlock(juce::Point<float>) const;
     [[nodiscard]] bool isInNoteResizeZone(int noteIndex, juce::Point<float>, bool leftEdge) const;
     [[nodiscard]] bool isInLoopHandleZone(juce::Point<float>, bool startHandle) const;
-
-    // A chord-lane block visually/logically stays exactly as long as the longest of the notes that
-    // still carry its id (falls back to its own stored lengthBeats if none remain, e.g. every note
-    // it created was individually deleted) - block.lengthBeats itself is never mutated after
-    // creation, this is computed fresh everywhere the block's effective length matters (painting,
-    // hit-testing, collision detection against new drops).
-    [[nodiscard]] double effectiveChordBlockLength(const ChordBlockData& block) const;
 
     // gestures
     void applyDragAt(juce::Point<float> position);
     void updateHoverState(juce::Point<float> position);
 
     void notifyContentChanged();
+
+    // Rebuilds _chordBlocks from scratch, in two phases (see the .cpp for the full walkthrough):
+    // (1) cluster _notes by onset-time proximity into candidate chord-change boundaries - a note
+    // joins a cluster if its own onset is within kChordOnsetToleranceBeats of that cluster's FIRST
+    // onset (a fixed window, not chained note-to-note, so a "staircase" of closely-spaced onsets
+    // can't transitively bridge two unrelated chords across a much wider span); (2) each cluster's
+    // detected pitch content is its own notes first, and only if those alone don't already match,
+    // the SMALLEST combination of still-sounding notes from EARLIER clusters that completes a match
+    // (see identifyWithMinimalBorrowing in the .cpp) - a genuine pedal tone/tied note can complete a
+    // later chord it rings under, without an ordinary trailing note-release overlap getting pulled
+    // in unnecessarily. Runs each candidate through theory::ChordIdentifier against _currentKey/
+    // _currentScale, keeping only the boundaries that match a cataloged chord. Called from
+    // notifyContentChanged() (covers every add/move/resize/delete), restoreState() (which
+    // deliberately doesn't call notifyContentChanged), and setKeyAndScale().
+    void recomputeChordBlocksFromNotes();
 
     // Recomputes _loopStartBeat/_loopEndBeat from the current note content (a no-op if
     // _loopManuallyAdjusted or there are no notes) - called from notifyContentChanged.
@@ -209,7 +223,8 @@ private:
 
     std::vector<MidiNoteBlock> _notes;
     std::vector<ChordBlockData> _chordBlocks;
-    int _nextChordBlockId = 0;
+    theory::Key _currentKey = theory::Key::C;
+    theory::Scale _currentScale = theory::Scale::Major;
     std::vector<Listener*> _listeners;
 
     juce::ScrollBar _hScrollBar { false };
@@ -223,7 +238,6 @@ private:
 
     DragMode _dragMode = DragMode::None;
     int _draggedNoteIndex = -1;
-    int _draggedChordIndex = -1;
     juce::Point<float> _dragStartMouse;
     juce::Point<float> _lastMousePosition;
     double _dragStartBeat = 0.0;
