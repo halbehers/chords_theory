@@ -41,7 +41,7 @@ SynthOscillatorSection::SynthOscillatorSection(const std::string& identifier, nd
     _unisonStereoDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
 
     _curve.displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
-    _shapeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+    _shapeCycler.setBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);
     _octaveDial.setAccentColor(nui::Theme::ThemeColor::SECONDARY_ACCENT);
     _detuneDial.setAccentColor(nui::Theme::ThemeColor::SECONDARY_ACCENT);
     _transposeDial.setAccentColor(nui::Theme::ThemeColor::SECONDARY_ACCENT);

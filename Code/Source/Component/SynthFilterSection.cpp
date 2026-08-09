@@ -29,8 +29,8 @@ SynthFilterSection::SynthFilterSection(const std::string& identifier, ndsp::Para
     addAndMakeVisible(_keyTrackDial);
 
     _responseCurve.displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
-    _typeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
-    _slopeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+    _typeCycler.setBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);
+    _slopeCycler.setBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);
 
     _cutoffDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);
     _resonanceDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);

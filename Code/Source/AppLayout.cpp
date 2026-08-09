@@ -35,8 +35,8 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
 
     _mainSection.setTabsDesign(nui::Theme::TabDesign::TAB);
-    _mainSection.setTabsBackgroundColour(nui::Theme::newColor(nui::Theme::SECONDARY_BACKGROUND).asJuce());
-    _mainSection.setTabsSelectedBackgroundColour(nui::Theme::newColor(nui::Theme::BACKGROUND).asJuce());
+    _mainSection.setTabsBackgroundColour(nui::Theme::ThemeColor::SECONDARY_BACKGROUND);
+    _mainSection.setTabsSelectedBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);
     _mainSection.setTabsBorderColour(juce::Colours::transparentBlack);
     _mainSection.setTabsSelectedBorderColour(juce::Colours::transparentBlack);
     _mainSection.setTabsFontSize(nui::Theme::PARAGRAPH);

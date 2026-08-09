@@ -27,7 +27,7 @@ SynthOutputSection::SynthOutputSection(const std::string& identifier, ndsp::Para
     // own circular disc (FULL_SHADE fill + BORDER outline), which floats directly on this
     // section's own panel rather than sitting inside a second, redundant rectangular card.
     _waveform.setTraceColour(nui::Theme::ThemeColor::SECONDARY_ACCENT);
-    _waveform.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+    _waveform.setBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);
     _waveform.setBorderColour(juce::Colours::transparentBlack);
 
     _tuningDial.setHeightType(nui::Theme::DialHeightType::MEDIUM);

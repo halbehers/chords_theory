@@ -46,7 +46,7 @@ SynthLfoSection::SynthLfoSection(const std::string& identifier, ndsp::ParameterM
     _depthDial.setLabelGap(8.f);
 
     _lfoCurve.displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
-    _shapeCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+    _shapeCycler.setBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);
 
     _syncToggle.addOnValueChangedListener(this);
     _syncToggle.setIconSize(14.f);

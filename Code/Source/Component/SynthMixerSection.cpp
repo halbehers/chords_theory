@@ -27,7 +27,7 @@ SynthMixerSection::SynthMixerSection(const std::string& identifier, ndsp::Parame
     addAndMakeVisible(_osc1LevelSlider);
     addAndMakeVisible(_osc2LevelSlider);
 
-    _algorithmCycler.setBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+    _algorithmCycler.setBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);
     _algorithmCycler.addOnValueChangedListener(this);
 
     _subLevelSlider.setTrackColour(nui::Theme::ThemeColor::BACKGROUND);
@@ -46,7 +46,7 @@ SynthMixerSection::SynthMixerSection(const std::string& identifier, ndsp::Parame
 
     for (auto* valueSetter : { &_fmAmountSetter, &_ringModMixSetter, &_amDepthSetter, &_serialFoldAmountSetter })
     {
-        valueSetter->setValueBackgroundColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce());
+        valueSetter->setValueBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);
         valueSetter->setDisplayMode(nelement::ValueSetter::DisplayMode::Inline);
         valueSetter->setGap(8.f);
         valueSetter->setValueBackgroundWidth(70.f);

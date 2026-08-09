@@ -8,10 +8,11 @@ namespace component
 VoicingSelector::VoicingSelector(const std::string& identifier):
     Component(identifier)
 {
-    // addAndMakeVisible(_closeButton);
-    // _closeButton.addOnClickListener(this);
-    // _closeButton.setIconSize(12.f);
-    // _closeButton.toFront(false); // defensive z-order parity with SettingsWindow's close button
+    addAndMakeVisible(_closeButton);
+    _closeButton.addOnClickListener(this);
+    _closeButton.setIconSize(12.f);
+    _closeButton.toFront(false); // defensive z-order parity with SettingsWindow's close button
+    _closeButton.setVisible(false); // hover-only, see updateHoverVisibility()
 
     addAndMakeVisible(_viewport);
     _viewport.setViewedComponent(&_voicingRow, false); // false: _voicingRow is an owned member, not viewport-owned
@@ -28,17 +29,19 @@ VoicingSelector::VoicingSelector(const std::string& identifier):
     // over the panel as a whole (including its buttons/viewport/close button), not just bare space.
     addMouseListener(this, true);
 
-    // A global listener (rather than relying on the local one above) is what lets mouseDown below
-    // actually see clicks on sibling components elsewhere in the app - the local listener can only
-    // ever report events within this component's own subtree, never a click on, say, a ChordCard.
-    juce::Desktop::getInstance().addGlobalMouseListener(this);
+    // A global listener (rather than relying on the local one above) is what lets
+    // handleGlobalMouseDown below actually see clicks on sibling components elsewhere in the app -
+    // the local listener can only ever report events within this component's own subtree, never a
+    // click on, say, a ChordCard. See GlobalMouseListener's own comment for why this is a separate
+    // object rather than `this`.
+    juce::Desktop::getInstance().addGlobalMouseListener(&_globalMouseListener);
 }
 
 VoicingSelector::~VoicingSelector()
 {
-    juce::Desktop::getInstance().removeGlobalMouseListener(this);
+    juce::Desktop::getInstance().removeGlobalMouseListener(&_globalMouseListener);
 
-    // _closeButton.removeListener(this);
+    _closeButton.removeListener(this);
 
     for (auto& button : _buttons)
         button->removeListener(this);
@@ -69,8 +72,8 @@ void VoicingSelector::resized()
     const auto bodyBounds = getLocalBounds().withTrimmedTop(kTriangleHeight);
     auto contentBounds = bodyBounds.reduced(kBodyInset);
 
-    // const auto closeButtonArea = contentBounds.removeFromRight(kCloseButtonSize).removeFromTop(kCloseButtonSize);
-    // _closeButton.setBounds(closeButtonArea);
+    const auto closeButtonArea = contentBounds.removeFromRight(kCloseButtonSize / 2).removeFromTop(kCloseButtonSize / 2).translated(-kCloseButtonEdgeGap, kCloseButtonEdgeGap);
+    _closeButton.setBounds(closeButtonArea);
 
     _viewport.setBounds(contentBounds.withTrimmedRight(kBodyInset));
 
@@ -80,7 +83,7 @@ void VoicingSelector::resized()
 void VoicingSelector::mouseEnter(const juce::MouseEvent&)
 {
     _isHovering = true;
-    updateScrollBarVisibility();
+    updateHoverVisibility();
 }
 
 void VoicingSelector::mouseExit(const juce::MouseEvent& event)
@@ -92,12 +95,12 @@ void VoicingSelector::mouseExit(const juce::MouseEvent& event)
         return;
 
     _isHovering = false;
-    updateScrollBarVisibility();
+    updateHoverVisibility();
 }
 
-void VoicingSelector::mouseDown(const juce::MouseEvent& event)
+void VoicingSelector::handleGlobalMouseDown(const juce::MouseEvent& event)
 {
-    // Delivered for every mouseDown in the app (see the global listener registered in the
+    // Delivered for every mouseDown in the app (see _globalMouseListener, registered in the
     // constructor) - a click landing inside this panel or one of its children (the close button,
     // a voicing button) is handled by that component's own click handler, not this; only a press
     // that lands genuinely outside both this panel and the exempt component (if any) dismisses it.
@@ -231,13 +234,14 @@ void VoicingSelector::layoutVoicingRow()
         x += kButtonWidth + kButtonGap;
     }
 
-    updateScrollBarVisibility();
+    updateHoverVisibility();
 }
 
-void VoicingSelector::updateScrollBarVisibility()
+void VoicingSelector::updateHoverVisibility()
 {
     const bool needsScrolling = _voicingRow.getWidth() > _viewport.getWidth();
     _viewport.getHorizontalScrollBar().setVisible(needsScrolling && _isHovering);
+    _closeButton.setVisible(_isHovering);
 }
 
 }

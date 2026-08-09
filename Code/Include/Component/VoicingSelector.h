@@ -44,7 +44,6 @@ public:
     void resized() override;
     void mouseEnter(const juce::MouseEvent&) override;
     void mouseExit(const juce::MouseEvent&) override;
-    void mouseDown(const juce::MouseEvent&) override;
 
     // Rebuilds the button row for `voicings` (clearing any previous set), highlights
     // currentSymbol, resets scroll position to the start, makes itself visible. Does not touch
@@ -70,20 +69,41 @@ public:
     void setDismissExemptComponent(juce::Component* component) { _dismissExemptComponent = component; }
 
 private:
+    // Desktop::addGlobalMouseListener delivers every MouseListener callback (mouseEnter/mouseExit
+    // included) for every component in the whole app, not just mouseDown - registering `this`
+    // directly would feed all of that noise into mouseEnter/mouseExit below, which only want to
+    // track hovering over THIS panel's own subtree (via the separate local addMouseListener(this,
+    // true) in the constructor). This dedicated listener only forwards mouseDown, so the global
+    // registration can never affect local hover state.
+    struct GlobalMouseListener : public juce::MouseListener
+    {
+        explicit GlobalMouseListener(VoicingSelector& owner): _owner(owner) {}
+        void mouseDown(const juce::MouseEvent& event) override { _owner.handleGlobalMouseDown(event); }
+        VoicingSelector& _owner;
+    };
+
     void onButtonClick(const std::string& componentID) override;
     void refreshSelectedStates();
     void layoutVoicingRow();
 
+    // A click landing outside both this panel and _dismissExemptComponent dismisses it - see
+    // GlobalMouseListener above for why this is driven by a dedicated global-only listener object
+    // rather than `this`.
+    void handleGlobalMouseDown(const juce::MouseEvent& event);
+
     // Shows the horizontal scrollbar only while genuinely needed (content wider than the viewport)
     // AND the pointer is over this panel - an auto-hide overlay scrollbar, rather than one that's
-    // permanently visible whenever there are enough voicings to scroll through.
-    void updateScrollBarVisibility();
+    // permanently visible whenever there are enough voicings to scroll through. Also toggles the
+    // close button's own visibility the same way - it should only appear while hovering the panel,
+    // not permanently.
+    void updateHoverVisibility();
 
     static constexpr int kTriangleHeight = 10;
     static constexpr int kTriangleHalfWidth = 8;
     static constexpr int kButtonWidth = 80;
     static constexpr int kButtonGap = 4;
     static constexpr int kCloseButtonSize = 20;
+    static constexpr int kCloseButtonEdgeGap = 8; // extra inset off the top/right edges, on top of kBodyInset
     static constexpr int kBodyInset = 6;
     // Native scrollbar thickness, explicitly set on _viewport (see constructor) rather than left at
     // the LookAndFeel's default - deliberately NOT reserved out of the button row's own height (see
@@ -103,6 +123,7 @@ private:
     std::vector<Listener*> _listeners;
     bool _isHovering = false;
     juce::Component* _dismissExemptComponent = nullptr;
+    GlobalMouseListener _globalMouseListener { *this };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(VoicingSelector)
 };
