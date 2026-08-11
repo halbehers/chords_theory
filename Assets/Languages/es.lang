@@ -29,7 +29,6 @@ countries: es mx ar cl co pe
 "scale_mixolydian" = "Mixolidio"
 "scale_locrian" = "Locrio"
 "scale_minor_blues" = "Blues menor"
-"progression_drag_handle_label" = "Arrastrarlo fuera"
 "progression_save_preset_button" = "Guardar preajuste"
 "progression_save_preset_confirm" = "Guardar"
 "progression_save_preset_placeholder" = "Nombre del preajuste"

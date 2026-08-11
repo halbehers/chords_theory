@@ -30,10 +30,10 @@ namespace
         juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
     }
 
-    // Same pattern as ProgressionDragHandleTests.cpp's own local helper - a separate mouseDownPos
+    // Same pattern as DragOutButtonTests.cpp's own local helper - a separate mouseDownPos
     // (rather than reusing position for both, like MidiEditorTests.cpp's helper does) is what makes
     // event.getDistanceFromDragStart() return a real, nonzero value, since ProgressionTimeline's own
-    // drag-threshold check (mirroring ProgressionDragHandle's) reads that rather than tracking its
+    // drag-threshold check (mirroring DragOutButton's) reads that rather than tracking its
     // own start-position member.
     juce::MouseEvent makeMouseEvent(juce::Component& component, juce::Point<float> position, juce::Point<float> mouseDownPos)
     {

@@ -29,7 +29,6 @@ countries: pt br
 "scale_mixolydian" = "Mixolídio"
 "scale_locrian" = "Lócrio"
 "scale_minor_blues" = "Blues menor"
-"progression_drag_handle_label" = "Arrastar para fora"
 "progression_save_preset_button" = "Guardar predefinição"
 "progression_save_preset_confirm" = "Guardar"
 "progression_save_preset_placeholder" = "Nome da predefinição"

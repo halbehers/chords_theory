@@ -29,7 +29,6 @@ countries: us gb au ca nz ie
 "scale_mixolydian" = "Mixolydian"
 "scale_locrian" = "Locrian"
 "scale_minor_blues" = "Minor Blues"
-"progression_drag_handle_label" = "Drag it out"
 "progression_save_preset_button" = "Save Preset"
 "progression_save_preset_confirm" = "Save"
 "progression_save_preset_placeholder" = "Preset name"

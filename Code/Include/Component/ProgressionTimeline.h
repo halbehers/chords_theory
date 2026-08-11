@@ -17,8 +17,8 @@ namespace component
 // fresh from the live playhead beat on every paint() call (never cached), so it re-pages itself
 // automatically the instant playback crosses a measure boundary (see kBeatsPerMeasure in the .cpp).
 // Read-only in every other respect except one gesture: dragging a chord segment out exports just
-// that chord's own notes as a temp MIDI file, same drag-to-DAW mechanism as ChordCard/
-// ProgressionDragHandle (see Listener::onChordBlockDragStarted).
+// that chord's own notes as a temp MIDI file, same drag-to-DAW mechanism as ChordCard/DragOutButton
+// (see Listener::onChordBlockDragStarted).
 class ProgressionTimeline : public nui::Component,
                              public ProgressionEditor::Listener,
                              private juce::Timer

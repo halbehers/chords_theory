@@ -172,6 +172,25 @@ private:
 
     enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, ResizeLoopStart, ResizeLoopEnd, MarqueeSelect, DragChordBlockOut };
 
+    // Registered (instead of `this`) with addMouseListener(&_childBoundaryListener, true) in the
+    // constructor - juce::Component IS-A juce::MouseListener, so registering `this` directly would
+    // make MidiEditor a listener of its OWN direct mouse events too (on top of the normal virtual-
+    // override dispatch every Component already gets), double-firing mouseDown/mouseUp/mouseDrag/
+    // mouseDoubleClick/etc. for every event that lands directly on MidiEditor itself - harmless for
+    // most of those (they're idempotent/absolute, not incremental), but catastrophic for
+    // mouseDoubleClick's add/remove-note logic specifically: a second, spurious call would find the
+    // note the first call just placed and delete it (or vice versa), and depending on the exact
+    // event/hit-test timing, could add a second note under the mouse if it initially failed to
+    // arrive there via the redundant call. This tiny dedicated listener only exists to receive the
+    // *children*'s (scrollbars') mouseExit crossings and forward them to our own override - see the
+    // constructor and mouseExit's own comment for why that forwarding is needed at all.
+    struct ChildBoundaryListener : public juce::MouseListener
+    {
+        explicit ChildBoundaryListener(MidiEditor& owner): _owner(owner) {}
+        void mouseExit(const juce::MouseEvent& event) override { _owner.mouseExit(event); }
+        MidiEditor& _owner;
+    };
+
     void timerCallback() override; // drag-triggered auto-scroll, and while playing, playhead repaint
 
     // paint helpers
@@ -236,6 +255,8 @@ private:
     // Horizontally zooms/scrolls so the current loop region exactly fills the visible content
     // width - triggered by double-clicking the ruler.
     void zoomToLoop();
+
+    ChildBoundaryListener _childBoundaryListener { *this };
 
     std::vector<MidiNoteBlock> _notes;
     std::vector<ChordBlockData> _chordBlocks;

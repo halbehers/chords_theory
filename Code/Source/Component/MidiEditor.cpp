@@ -105,7 +105,9 @@ MidiEditor::MidiEditor(const std::string& identifier, audio::ProgressionPlayer* 
     _hScrollBar.setColour(juce::ScrollBar::thumbColourId, nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce().withAlpha(0.5f));
     _vScrollBar.setColour(juce::ScrollBar::thumbColourId, nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce().withAlpha(0.5f));
 
-    addMouseListener(this, true);
+    // See ChildBoundaryListener's own comment (MidiEditor.h) for why this registers a dedicated
+    // forwarding object instead of `this` directly.
+    addMouseListener(&_childBoundaryListener, true);
 
     // Needed for keyPressed() (Delete/arrow-key nudge of the current selection) to ever fire -
     // mouseDown grabs focus on every click so keyboard input reliably routes here afterward.
@@ -552,9 +554,9 @@ void MidiEditor::mouseEnter(const juce::MouseEvent&)
 
 void MidiEditor::mouseExit(const juce::MouseEvent& event)
 {
-    // addMouseListener(this, true) means this also fires for every child's own boundary crossings
-    // (e.g. moving from the content area onto a scrollbar) - only treat it as a real "left the
-    // whole editor" exit if the pointer has actually left this component's own bounds.
+    // _childBoundaryListener (see MidiEditor.h) forwards here for every child's own boundary
+    // crossings too (e.g. moving from the content area onto a scrollbar) - only treat it as a real
+    // "left the whole editor" exit if the pointer has actually left this component's own bounds.
     if (getLocalBounds().contains(event.getEventRelativeTo(this).getPosition()))
         return;
 

@@ -29,7 +29,6 @@ countries: de at ch li
 "scale_mixolydian" = "Mixolydisch"
 "scale_locrian" = "Lokrisch"
 "scale_minor_blues" = "Moll-Blues"
-"progression_drag_handle_label" = "Herausziehen"
 "progression_save_preset_button" = "Preset speichern"
 "progression_save_preset_confirm" = "Speichern"
 "progression_save_preset_placeholder" = "Preset-Name"

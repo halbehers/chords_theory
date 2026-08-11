@@ -29,7 +29,6 @@ countries: it ch sm va
 "scale_mixolydian" = "Misolidio"
 "scale_locrian" = "Locrio"
 "scale_minor_blues" = "Blues minore"
-"progression_drag_handle_label" = "Trascinarlo fuori"
 "progression_save_preset_button" = "Salva preset"
 "progression_save_preset_confirm" = "Salva"
 "progression_save_preset_placeholder" = "Nome preset"

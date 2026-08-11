@@ -14,7 +14,7 @@ add_executable(${PROJECT_NAME}_Tests
         VoicingSelectorTests.cpp
         ProgressionEditorTests.cpp
         ProgressionPresetIntegrationTests.cpp
-        ProgressionDragHandleTests.cpp
+        DragOutButtonTests.cpp
         DahdsrEnvelopeTests.cpp
         VoiceFilterTests.cpp
         LfoTests.cpp

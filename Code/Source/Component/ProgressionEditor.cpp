@@ -2,6 +2,7 @@
 
 #include <algorithm>
 
+#include "AppLocalisation.h"
 #include "Component/SavePresetPrompt.h"
 #include "Theory/ProgressionPresetFactory.h"
 #include "Theory/ProgressionPresetLibrary.h"
@@ -11,7 +12,7 @@ namespace component
 
 namespace
 {
-    constexpr float kHeaderRowHeight = 32.f;
+    constexpr float kHeaderRowHeight = 42.f;
 }
 
 ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolver chordResolver, audio::ProgressionPlayer* progressionPlayer):
@@ -19,7 +20,7 @@ ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolve
     _chordResolver(std::move(chordResolver)),
     _presetPicker("progression-preset-picker-wrapper"),
     _savePresetButton("progression-save-preset-button", nui::Icons::getPlus()),
-    _dragHandle("progression-drag-handle"),
+    _dragOutButton("progression-drag-out-button"),
     _midiEditor("progression-midi-editor", progressionPlayer)
 {
     _presetPicker.addListener(this);
@@ -30,7 +31,7 @@ ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolve
     _playButton.setIconSize(16.f);
     _playButton.addOnClickListener(this);
 
-    _dragHandle.addListener(this);
+    _dragOutButton.addListener(this);
 
     _presetsLabel.setText(juce::translate("progression_presets_label").toStdString());
     _presetsLabel.setFontSize(nui::Theme::LABEL);
@@ -38,36 +39,39 @@ ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolve
 
     _midiEditor.addListener(this);
 
+    AppLocalisation::getChangeBroadcaster().addChangeListener(this);
+
     _layout.setGap(8.f);
     _layout.setDisplayGrid(false);
     _layout.setMargin(0.f, 0.f, 0.f, 16.f);
 
-    _layout.init({ 1, 1, 1 }, { 1, 1, 1, 4, 1, 1, 1 });
+    _layout.init({ 1, 1, 1 }, { 1, 1, 4, 1, 1, 1 });
 
     _layout.setFixedColumnWidth(0, 32.f);
-    _layout.setFixedColumnWidth(1, 12.f);
-    _layout.setFixedColumnWidth(2, 150.f);
-    _layout.setFixedColumnWidth(6, 32.f);
-    _layout.setFixedColumnWidth(5, 250.f);
-    _layout.setFixedColumnWidth(4, 175.f);
+    _layout.setFixedColumnWidth(1, 32.f);
+    _layout.setFixedColumnWidth(5, 32.f);
+    _layout.setFixedColumnWidth(4, 250.f);
+    _layout.setFixedColumnWidth(3, 175.f);
 
     _layout.setFixedRowHeight(0, kHeaderRowHeight);
     _layout.setFixedRowHeight(1, 12.f);
 
     _layout.addComponent(_playButton, 0, 0, 1, 1);
-    _layout.addComponent(_dragHandle, 0, 2, 1, 1);
-    _layout.addComponent(_presetsLabel, 0, 4, 1, 1);
-    _layout.addComponent(_presetPicker, 0, 5, 1, 1);
-    _layout.addComponent(_savePresetButton, 0, 6, 1, 1);
-    _layout.addComponent(_midiEditor, 2, 0, 7, 1);
+    _layout.addComponent(_dragOutButton, 0, 1, 1, 1);
+    _layout.addComponent(_presetsLabel, 0, 3, 1, 1);
+    _layout.addComponent(_presetPicker, 0, 4, 1, 1);
+    _layout.addComponent(_savePresetButton, 0, 5, 1, 1);
+    _layout.addComponent(_midiEditor, 2, 0, 6, 1);
 }
 
 ProgressionEditor::~ProgressionEditor()
 {
+    AppLocalisation::getChangeBroadcaster().removeChangeListener(this);
+
     _presetPicker.removeListener(this);
     _savePresetButton.removeListener(this);
     _playButton.removeListener(this);
-    _dragHandle.removeListener(this);
+    _dragOutButton.removeListener(this);
     _midiEditor.removeListener(this);
 }
 
@@ -83,6 +87,16 @@ void ProgressionEditor::resized()
     Component::resized();
 
     _layout.resized();
+}
+
+void ProgressionEditor::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    Component::changeListenerCallback(source);
+
+    if (source != &AppLocalisation::getChangeBroadcaster())
+        return;
+
+    _presetsLabel.setText(juce::translate("progression_presets_label").toStdString());
 }
 
 void ProgressionEditor::setKeyAndScale(theory::Key key, theory::Scale scale)
@@ -183,7 +197,7 @@ void ProgressionEditor::onPresetSelected(const theory::ProgressionPreset& preset
     loadPreset(preset);
 }
 
-void ProgressionEditor::onProgressionDragStarted()
+void ProgressionEditor::onDragStarted()
 {
     for (auto* listener : _listeners)
         listener->onProgressionDragStarted();

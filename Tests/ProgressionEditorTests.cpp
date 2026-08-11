@@ -246,7 +246,7 @@ TEST_CASE("ProgressionEditor: a MidiEditor chord lane drag bubbles up to this co
     REQUIRE(midiEditor != nullptr);
 
     // ProgressionEditor's own grid gives _midiEditor a fraction of the 800x400 sequencer's height
-    // (it shares the grid with the preset/drag-handle header row) - override its bounds directly so
+    // (it shares the grid with the preset/drag-out-button header row) - override its bounds directly so
     // this file's beatToX/chordLaneY constants (mirroring MidiEditor.cpp's own fixed layout at an
     // 800x400 size) apply exactly as they do in MidiEditorTests.cpp's own tests.
     midiEditor->setBounds(0, 0, 800, 400);

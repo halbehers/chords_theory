@@ -29,7 +29,6 @@ countries: fr be mc ch lu
 "scale_mixolydian" = "Mixolydien"
 "scale_locrian" = "Locrien"
 "scale_minor_blues" = "Blues mineur"
-"progression_drag_handle_label" = "Le faire glisser"
 "progression_save_preset_button" = "Enregistrer le préréglage"
 "progression_save_preset_confirm" = "Enregistrer"
 "progression_save_preset_placeholder" = "Nom du préréglage"

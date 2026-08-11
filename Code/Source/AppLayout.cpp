@@ -6,12 +6,6 @@
 #include "Theory/NoteConvertor.h"
 #include "Theory/SessionStateSerializer.h"
 
-namespace
-{
-    // Same threshold ProgressionDragHandle uses for its own click-vs-drag gesture.
-    constexpr float kDragOutButtonThreshold = 6.f;
-}
-
 AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProcessor& audioProcessor):
     nlayout::AppLayout(parameterManager),
     _audioProcessor(audioProcessor),
@@ -42,12 +36,7 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _synthPlayButton.setIconSize(16.f);
     _synthPlayButton.addOnClickListener(this);
 
-    _dragOutButton.setIconSize(16.f);
-    _dragOutButton.setMouseCursor(juce::MouseCursor::DraggingHandCursor);
-    // No click behavior of its own (mirrors ProgressionDragHandle) - performExternalDragDropOfFiles
-    // must be called in response to a live mouseDrag, not a completed click, so the actual gesture is
-    // driven by AppLayout's own mouseDown/mouseDrag overrides below instead of OnClickListener.
-    _dragOutButton.addMouseListener(this, true);
+    _dragOutButton.addListener(this);
 
     _voicingSelector.addListener(this);
     _voicingSelector.setDismissExemptComponent(&_chordBrowser);
@@ -139,7 +128,7 @@ AppLayout::~AppLayout()
 
     _settings.removeListener(this);
     _synthPlayButton.removeListener(this);
-    _dragOutButton.removeMouseListener(this);
+    _dragOutButton.removeListener(this);
     _keyScaleSelector.removeListener(this);
     _chordBrowser.removeListener(this);
     _progressionEditor.removeListener(this);
@@ -194,27 +183,9 @@ void AppLayout::onButtonClick(const std::string& componentID)
     }
 }
 
-void AppLayout::mouseDown(const juce::MouseEvent& event)
+void AppLayout::onDragStarted()
 {
-    if (event.originalComponent != &_dragOutButton && !_dragOutButton.isParentOf(event.originalComponent))
-        return;
-
-    _dragOutButtonDragGestureStarted = false;
-}
-
-void AppLayout::mouseDrag(const juce::MouseEvent& event)
-{
-    if (event.originalComponent != &_dragOutButton && !_dragOutButton.isParentOf(event.originalComponent))
-        return;
-
-    if (_dragOutButtonDragGestureStarted)
-        return;
-
-    if (static_cast<float>(event.getDistanceFromDragStart()) < kDragOutButtonThreshold)
-        return;
-
-    _dragOutButtonDragGestureStarted = true;
-    onProgressionDragStarted(); // same whole-progression export _dragHandle's own gesture uses
+    onProgressionDragStarted(); // same whole-progression export _progressionEditor's own drag-out button uses
 }
 
 void AppLayout::onKeyScaleChanged(theory::Key key, theory::Scale scale)

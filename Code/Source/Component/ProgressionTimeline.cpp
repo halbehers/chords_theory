@@ -14,7 +14,7 @@ namespace
     constexpr int kBarsPerMeasure = 4;
     constexpr double kBeatsPerMeasure = static_cast<double>(kBarsPerMeasure) * MidiEditor::kBeatsPerBar;
 
-    // Same threshold ProgressionDragHandle uses for its own click-vs-drag gesture.
+    // Same threshold DragOutButton/ChordCard use for their own click-vs-drag gestures.
     constexpr float kDragStartThreshold = 6.f;
 }
 
@@ -25,7 +25,6 @@ ProgressionTimeline::ProgressionTimeline(const std::string& identifier, Progress
     _progressionPlayer(progressionPlayer)
 {
     displayBackground(nui::Theme::ThemeColor::BACKGROUND, nui::Theme::getBorderRadius());
-    displayBorder(nui::Theme::ThemeColor::BORDER, 1.f, nui::Theme::getBorderRadius(), 1.f);
 
     setMouseCursor(juce::MouseCursor::DraggingHandCursor);
 

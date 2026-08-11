@@ -8,8 +8,8 @@
 #include <nierika_dsp/nierika_dsp.h>
 
 #include "Audio/ProgressionPlayer.h"
+#include "Component/DragOutButton.h"
 #include "Component/MidiEditor.h"
-#include "Component/ProgressionDragHandle.h"
 #include "Component/ProgressionPresetPicker.h"
 #include "Theory/Chord.h"
 #include "Theory/Key.h"
@@ -21,15 +21,15 @@
 namespace component
 {
 
-// The progression header (preset picker/save, whole-progression drag-to-DAW handle) plus the
+// The progression header (preset picker/save, whole-progression drag-to-DAW button) plus the
 // MidiEditor piano-roll surface below it. MidiEditor is the sole data model for the progression -
-// presets load into it and save from it (see loadPreset/getPopulatedSlots), the drag handle exports
-// its exact live content, and its pure-data snapshot (getMidiEditorState/restoreMidiEditorState)
-// is what AppLayout persists as DAW-project session state.
+// presets load into it and save from it (see loadPreset/getPopulatedSlots), the drag-out button
+// exports its exact live content, and its pure-data snapshot (getMidiEditorState/
+// restoreMidiEditorState) is what AppLayout persists as DAW-project session state.
 class ProgressionEditor : public nui::Component,
                            public MidiEditor::Listener,
                            public ProgressionPresetPicker::Listener,
-                           public ProgressionDragHandle::Listener,
+                           public DragOutButton::Listener,
                            public nelement::SVGButton::OnClickListener
 {
 public:
@@ -44,7 +44,7 @@ public:
         // itself, it only bubbles the event up to its own owner (AppLayout).
         virtual void onChordFileDropped(double startBeat, const juce::String& filePath) = 0;
 
-        // The user started dragging the "insert whole progression" handle.
+        // The user started dragging the "insert whole progression" button.
         virtual void onProgressionDragStarted() = 0;
 
         // Fired after any mutation to the MidiEditor's content (add/move/resize/delete, or a
@@ -85,7 +85,7 @@ public:
 
     // The MidiEditor's chord blocks, sorted by startBeat, each reporting the ProgressionSlot
     // currently detected from its notes (see MidiEditor.h/ChordIdentifier) - used for "save as
-    // preset" and was previously also used for the drag-handle export (now reads
+    // preset" and was previously also used for the drag-out button's export (now reads
     // getMidiEditorState() instead, for exact note-level fidelity).
     [[nodiscard]] std::vector<theory::ProgressionSlot> getPopulatedSlots() const;
 
@@ -122,12 +122,14 @@ public:
     void removeListener(Listener* listener);
 
 private:
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+
     void onChordFileDropped(double startBeat, const juce::String& filePath) override;
     void onContentChanged() override;
     void onPlaybackStateChanged(bool isPlaying) override;
     void onChordBlockDragStarted(int chordBlockIndex) override;
     void onPresetSelected(const theory::ProgressionPreset& preset) override;
-    void onProgressionDragStarted() override;
+    void onDragStarted() override; // DragOutButton::Listener - bubbles to _listeners' onProgressionDragStarted
     void onButtonClick(const std::string& componentID) override;
 
     ChordResolver _chordResolver;
@@ -139,7 +141,7 @@ private:
     nelement::SVGButton _savePresetButton;
     nelement::SVGButton _playButton { "progression-play-button", nui::Icons::getPlay() };
 
-    ProgressionDragHandle _dragHandle;
+    DragOutButton _dragOutButton;
     MidiEditor _midiEditor;
 
     nlayout::GridLayout<nui::Component> _layout { *this };
