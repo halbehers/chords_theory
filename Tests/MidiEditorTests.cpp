@@ -33,7 +33,13 @@ namespace
     constexpr float kRowHeight = 16.f;
     constexpr int kInitialTopMidiNote = 67;
     constexpr float kScrollbarThickness = 8.f;
+    constexpr float kChordLaneHeight = 28.f;
     constexpr double kBeatsPerBar = 4.0; // a dropped chord's default length/snap cell is a full bar
+
+    // For a MidiEditor sized 800x400 (this file's own standard test bounds) - _contentArea's own
+    // bottom edge, i.e. the chord lane's top edge (see MidiEditor::resized()'s gridBottom/
+    // _contentArea math). Any y in [chordLaneY(400), 400] hit-tests as inside the lane.
+    float chordLaneY(float editorHeight) { return editorHeight - kScrollbarThickness - kChordLaneHeight; }
 
     float beatToX(double beat) { return kGutterWidth + static_cast<float>(beat) * kPixelsPerBeat; }
     float pitchToY(int midiNote) { return kRulerHeight + static_cast<float>(kInitialTopMidiNote - midiNote) * kRowHeight; }
@@ -60,6 +66,8 @@ namespace
         int contentChangedCount = 0;
         int playbackStateChangedCount = 0;
         bool lastPlaybackState = false;
+        int chordBlockDragStartedCount = 0;
+        int lastChordBlockDragIndex = -1;
 
         void onChordFileDropped(double startBeat, const juce::String&) override
         {
@@ -73,6 +81,12 @@ namespace
         {
             ++playbackStateChangedCount;
             lastPlaybackState = isPlaying;
+        }
+
+        void onChordBlockDragStarted(int chordBlockIndex) override
+        {
+            ++chordBlockDragStartedCount;
+            lastChordBlockDragIndex = chordBlockIndex;
         }
     };
 
@@ -129,6 +143,61 @@ TEST_CASE("MidiEditor::addChordAtBeat splits the chord into one note block per c
 
     REQUIRE(editor.getChordBlockSlot(0).has_value());
     CHECK(*editor.getChordBlockSlot(0) == testSlot(chord));
+
+    REQUIRE(editor.getChordBlockLabel(0).has_value());
+    CHECK(*editor.getChordBlockLabel(0) == chord.readableName);
+}
+
+TEST_CASE("MidiEditor: dragging past the threshold on a chord lane segment fires onChordBlockDragStarted with its index", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord()); // occupies beats [0, 4) -> x in [beatToX(0), beatToX(4)]
+
+    RecordingListener listener;
+    editor.addListener(&listener);
+
+    const auto laneY = chordLaneY(400.f) + kChordLaneHeight * 0.5f;
+    const juce::Point<float> start { beatToX(1.0), laneY };    // inside the chord's own segment
+    const juce::Point<float> dragged { beatToX(1.0) + 10.f, laneY }; // 10px away, past the 3px threshold, still inside it
+
+    editor.mouseDown(makeMouseEvent(editor, start));
+    editor.mouseDrag(makeMouseEvent(editor, dragged));
+
+    CHECK(listener.chordBlockDragStartedCount == 1);
+    CHECK(listener.lastChordBlockDragIndex == 0);
+
+    editor.mouseUp(makeMouseEvent(editor, dragged));
+    CHECK(listener.contentChangedCount == 0); // a pure export gesture - no note content changed
+
+    editor.removeListener(&listener);
+}
+
+TEST_CASE("MidiEditor: dragging over empty chord lane space does not fire onChordBlockDragStarted", "[MidiEditor]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord()); // occupies beats [0, 4) only
+
+    RecordingListener listener;
+    editor.addListener(&listener);
+
+    const auto laneY = chordLaneY(400.f) + kChordLaneHeight * 0.5f;
+    const juce::Point<float> start { beatToX(8.0), laneY };    // well past the chord's own segment
+    const juce::Point<float> dragged { beatToX(8.0) + 10.f, laneY };
+
+    editor.mouseDown(makeMouseEvent(editor, start));
+    editor.mouseDrag(makeMouseEvent(editor, dragged));
+    editor.mouseUp(makeMouseEvent(editor, dragged));
+
+    CHECK(listener.chordBlockDragStartedCount == 0);
+    // Doesn't fall back to a marquee-select or note-drag either - the lane click starts no drag
+    // mode at all when it hits no block.
+    CHECK(listener.contentChangedCount == 0);
+
+    editor.removeListener(&listener);
 }
 
 TEST_CASE("MidiEditor: double-click on empty space adds a note, double-click on a note removes it", "[MidiEditor]")

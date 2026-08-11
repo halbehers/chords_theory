@@ -9,6 +9,7 @@
 #include "Component/ChordDegreeBrowser.h"
 #include "Component/KeyScaleSelector.h"
 #include "Component/ProgressionEditor.h"
+#include "Component/ProgressionTimeline.h"
 #include "Component/SettingsWindow.h"
 #include "Component/SynthEditor.h"
 #include "Component/VoicingSelector.h"
@@ -19,6 +20,7 @@ class AppLayout final : public nlayout::AppLayout,
                          public component::KeyScaleSelector::Listener,
                          public component::ChordDegreeBrowser::Listener,
                          public component::ProgressionEditor::Listener,
+                         public component::ProgressionTimeline::Listener,
                          public component::VoicingSelector::Listener,
                          public nui::Section::OnPanelChangedListener
 {
@@ -33,6 +35,14 @@ public:
 private:
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
+    // Registered (via _dragOutButton.addMouseListener(this, true) - see the constructor) only
+    // against _dragOutButton and its own nested child (the DrawableButton it wraps internally), so
+    // every call here is about that one button's own gesture - same click-vs-drag threshold pattern
+    // as ProgressionDragHandle, just driven from this side since SVGButton has no drag gesture of
+    // its own to reuse.
+    void mouseDown(const juce::MouseEvent&) override;
+    void mouseDrag(const juce::MouseEvent&) override;
+
     void onKeyScaleChanged(theory::Key key, theory::Scale scale) override;
     void onChordChanged(theory::Degree degree, const theory::Chord& newChord) override;
     void onChordDragStarted(theory::Degree degree, const theory::Chord& chord) override;
@@ -43,6 +53,16 @@ private:
     void onChordFileDropped(double startBeat, const juce::String& filePath) override;
     void onProgressionDragStarted() override;
     void onContentChanged() override;
+    void onPlaybackStateChanged(bool isPlaying) override;
+
+    // The user dragged a single chord segment out of _progressionTimeline OR out of the MidiEditor's
+    // own chord lane (component::ProgressionEditor::Listener and component::ProgressionTimeline::
+    // Listener declare the identical pure virtual, so this one override satisfies both) - resolves
+    // the index back to its own notes (normalized to start at beat 0, so the exported clip plays
+    // immediately rather than starting with however much silent lead-in it had in the original
+    // progression) and performs the same OS-level file drag onChordDragStarted/
+    // onProgressionDragStarted already use.
+    void onChordBlockDragStarted(int chordBlockIndex) override;
 
     // _mainSection's own panel-switch mechanism (GridLayout::setVisible()) unconditionally shows
     // every component registered in a panel the moment it becomes active again - including
@@ -78,6 +98,15 @@ private:
     component::ChordDegreeBrowser _chordBrowser;
     component::VoicingSelector _voicingSelector { "voicing-selector" };
     component::ProgressionEditor _progressionEditor;
+    // Declared after _progressionEditor - its constructor registers itself as a listener on it, so
+    // _progressionEditor must already be constructed (C++ initializes members in declaration order).
+    component::ProgressionTimeline _progressionTimeline;
+    // Mirrors _progressionEditor's own play button - lets playback be started/stopped from the
+    // Synth tab too, driven through the same MidiEditor::startPlayback()/stopPlayback() path (see
+    // ProgressionEditor's forwarding isPlaying()/startPlayback()/stopPlayback()), so both buttons
+    // stay in sync via onPlaybackStateChanged regardless of which one was clicked.
+    nelement::SVGButton _synthPlayButton { "synth-play-button", nui::Icons::getPlay() };
+    nelement::SVGButton _dragOutButton { "drag-out-button", nui::Icons::getHandle() };
     component::SynthEditor _synthEditor;
 
     // Owns the "Chords"/"Synth" tab switcher - everything above except _settings/_keyScaleSelector
@@ -96,6 +125,11 @@ private:
     // Which degree the voicing selector is currently showing, if open - used to re-derive the
     // arrow-target x on resize and to know what to clear when the key/scale changes underneath it.
     std::optional<theory::Degree> _openVoicingDegree;
+
+    // _dragOutButton's own click-vs-drag gesture state (see mouseDown/mouseDrag above) - reset on
+    // every mouseDown, latched true the moment the threshold is crossed so onProgressionDragStarted()
+    // fires at most once per gesture.
+    bool _dragOutButtonDragGestureStarted = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AppLayout)
 };

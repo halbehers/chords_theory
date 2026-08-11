@@ -6,6 +6,12 @@
 #include "Theory/NoteConvertor.h"
 #include "Theory/SessionStateSerializer.h"
 
+namespace
+{
+    // Same threshold ProgressionDragHandle uses for its own click-vs-drag gesture.
+    constexpr float kDragOutButtonThreshold = 6.f;
+}
+
 AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProcessor& audioProcessor):
     nlayout::AppLayout(parameterManager),
     _audioProcessor(audioProcessor),
@@ -13,6 +19,7 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _keyScaleSelector("key-scale-selector"),
     _chordBrowser("chord-degree-browser"),
     _progressionEditor("progression-sequencer", [this](const theory::ProgressionSlot& slot) { return _chordBrowser.resolveSlot(slot); }, &audioProcessor.getSynthEngine().getProgressionPlayer()),
+    _progressionTimeline("progression-timeline", _progressionEditor, &audioProcessor.getSynthEngine().getProgressionPlayer()),
     _synthEditor(parameterManager, &audioProcessor.getSynthEngine().getLeftWaveformFifo(), &audioProcessor.getSynthEngine().getRightWaveformFifo()),
     _mainSection("main-section", parameterManager),
     _windowsManager(*this)
@@ -28,6 +35,19 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
 
     _progressionEditor.addListener(this);
     _progressionEditor.setKeyAndScale(_keyScaleSelector.getKey(), _keyScaleSelector.getScale());
+
+    _progressionTimeline.setHeightType(nui::Theme::HeightType::THIN);
+    _progressionTimeline.addListener(this);
+
+    _synthPlayButton.setIconSize(16.f);
+    _synthPlayButton.addOnClickListener(this);
+
+    _dragOutButton.setIconSize(16.f);
+    _dragOutButton.setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    // No click behavior of its own (mirrors ProgressionDragHandle) - performExternalDragDropOfFiles
+    // must be called in response to a live mouseDrag, not a completed click, so the actual gesture is
+    // driven by AppLayout's own mouseDown/mouseDrag overrides below instead of OnClickListener.
+    _dragOutButton.addMouseListener(this, true);
 
     _voicingSelector.addListener(this);
     _voicingSelector.setDismissExemptComponent(&_chordBrowser);
@@ -52,8 +72,8 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
 
     _mainSection.getLayout().setFixedColumnWidth(0, 24.f);
     _mainSection.getLayout().setFixedColumnWidth(8, 24.f);
-    _mainSection.getLayout().setFixedColumnWidth(1, 32.f);
-    _mainSection.getLayout().setFixedColumnWidth(7, 32.f);
+    _mainSection.getLayout().setFixedColumnWidth(1, 42.f);
+    _mainSection.getLayout().setFixedColumnWidth(7, 42.f);
     _mainSection.getLayout().setFixedColumnWidth(4, 450.f);
     _mainSection.getLayout().setFixedRowHeight(0, 60.f);
     _mainSection.getLayout().setFixedRowHeight(1, 64.f);
@@ -67,8 +87,21 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _mainSection.getLayout().addComponent(_progressionEditor, 4, 1, 7, 1);
 
     _mainSection.getLayout("synth-tab").setDisplayGrid(false);
-    _mainSection.getLayout("synth-tab").init({ 1 }, { 1 });
-    _mainSection.getLayout("synth-tab").addComponent(_synthEditor, 0, 0, 1, 1);
+    _mainSection.getLayout("synth-tab").init({ 1, 1 }, { 1, 1, 1, 1, 4, 1, 1, 1, 1 });
+
+    _mainSection.getLayout("synth-tab").setFixedRowHeight(0, 60.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(0, 24.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(8, 24.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(1, 42.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(7, 42.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(3, 42.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(5, 42.f);
+
+    _mainSection.getLayout("synth-tab").addComponent(_settings, 0, 1, 1, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_synthPlayButton, 0, 3, 1, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_progressionTimeline, 0, 4, 1, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_dragOutButton, 0, 5, 1, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_synthEditor, 1, 0, 9, 1);
 
     getLayout().setGap(16.f);
     getLayout().setDisplayGrid(false);
@@ -105,9 +138,12 @@ AppLayout::~AppLayout()
     _mainSection.removeListener(this);
 
     _settings.removeListener(this);
+    _synthPlayButton.removeListener(this);
+    _dragOutButton.removeMouseListener(this);
     _keyScaleSelector.removeListener(this);
     _chordBrowser.removeListener(this);
     _progressionEditor.removeListener(this);
+    _progressionTimeline.removeListener(this);
     _voicingSelector.removeListener(this);
 }
 
@@ -146,7 +182,39 @@ void AppLayout::onButtonClick(const std::string& componentID)
     if (componentID == _settings.getComponentID())
     {
         _windowsManager.showWindow("settings");
+        return;
     }
+
+    if (componentID == _synthPlayButton.getComponentID())
+    {
+        if (_progressionEditor.isPlaying())
+            _progressionEditor.stopPlayback();
+        else
+            _progressionEditor.startPlayback();
+    }
+}
+
+void AppLayout::mouseDown(const juce::MouseEvent& event)
+{
+    if (event.originalComponent != &_dragOutButton && !_dragOutButton.isParentOf(event.originalComponent))
+        return;
+
+    _dragOutButtonDragGestureStarted = false;
+}
+
+void AppLayout::mouseDrag(const juce::MouseEvent& event)
+{
+    if (event.originalComponent != &_dragOutButton && !_dragOutButton.isParentOf(event.originalComponent))
+        return;
+
+    if (_dragOutButtonDragGestureStarted)
+        return;
+
+    if (static_cast<float>(event.getDistanceFromDragStart()) < kDragOutButtonThreshold)
+        return;
+
+    _dragOutButtonDragGestureStarted = true;
+    onProgressionDragStarted(); // same whole-progression export _dragHandle's own gesture uses
 }
 
 void AppLayout::onKeyScaleChanged(theory::Key key, theory::Scale scale)
@@ -264,6 +332,46 @@ void AppLayout::onProgressionDragStarted()
 void AppLayout::onContentChanged()
 {
     syncStateToValueTree();
+}
+
+void AppLayout::onChordBlockDragStarted(int chordBlockIndex)
+{
+    const auto startBeat = _progressionEditor.getChordBlockStartBeat(chordBlockIndex);
+    const auto lengthBeats = _progressionEditor.getChordBlockLengthBeats(chordBlockIndex);
+    if (!startBeat || !lengthBeats)
+        return;
+
+    const auto blockEnd = *startBeat + *lengthBeats;
+
+    // Exports this one chord block's own notes exactly as placed (preserving voicing/inversion,
+    // and any intra-chord onset staggering) rather than re-deriving a fresh generic voicing - same
+    // "exact content" philosophy as onProgressionDragStarted's whole-progression export, just
+    // filtered down to one chord and re-based to start at beat 0 so the exported clip plays
+    // immediately instead of carrying however much silent lead-in it had at its original position.
+    std::vector<theory::MidiEditorNoteState> blockNotes;
+    for (const auto& note : _progressionEditor.getMidiEditorState().notes)
+    {
+        const auto noteEnd = note.startBeat + note.lengthBeats;
+        if (noteEnd <= *startBeat || note.startBeat >= blockEnd)
+            continue; // doesn't belong to this chord block
+
+        blockNotes.push_back({ note.midiNote, note.startBeat - *startBeat, note.lengthBeats });
+    }
+
+    if (blockNotes.empty())
+        return;
+
+    const auto midiFile = theory::MidiExporter::writeMidiEditorContentFile(blockNotes);
+
+    if (auto* dragContainer = findParentComponentOfClass<juce::DragAndDropContainer>())
+        dragContainer->performExternalDragDropOfFiles({ midiFile.getFullPathName() }, false);
+}
+
+void AppLayout::onPlaybackStateChanged(bool isPlaying)
+{
+    // Mirrors ProgressionEditor's own play button - keeps the Synth-tab button's icon correct
+    // regardless of which button (this one, or the Chords tab's) actually triggered the change.
+    _synthPlayButton.setIconBinary(isPlaying ? nui::Icons::getStop() : nui::Icons::getPlay());
 }
 
 void AppLayout::syncStateToValueTree()

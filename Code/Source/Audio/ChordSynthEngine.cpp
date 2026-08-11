@@ -14,6 +14,15 @@ ChordSynthEngine::ChordSynthEngine()
 
     for (int i = 0; i < kNumVoices; ++i)
         _synth.addVoice(new SynthVoice(_sharedState));
+
+    // Without this, juce::Synthesiser::noteOn() silently drops any note-on that arrives once all
+    // kNumVoices voices are busy (including ones still in their release tail) - audible as a chord
+    // going missing entirely with no warning. A multi-bar progression easily exceeds kNumVoices
+    // once earlier chords' release tails are still ringing when a later chord's notes come in
+    // (worst-case toward the end of a progression, since the voice pool has had the least time to
+    // free up), so stealing the oldest/quietest voice instead of dropping the note is required for
+    // ChordSynthEngine::renderNextBlock's ProgressionPlayer-driven playback to be reliable.
+    _synth.setNoteStealingEnabled(true);
 }
 
 void ChordSynthEngine::prepare(double sampleRate, int samplesPerBlock, int numChannels)

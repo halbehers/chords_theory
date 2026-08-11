@@ -52,7 +52,7 @@ LanguageSettings::LanguageSettings(const std::string& identifier):
 
     _layout.setGap(8.f);
     _layout.setDisplayGrid(false);
-    _layout.init({ 1, 1, 1 }, { 1, 4 });
+    _layout.init({ 1, 1 }, { 1, 4 });
 
     _layout.setFixedRowHeight(0, 32.f);
 

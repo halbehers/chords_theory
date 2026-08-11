@@ -306,6 +306,13 @@ std::optional<theory::ProgressionSlot> MidiEditor::getChordBlockSlot(int index) 
     return _chordBlocks[static_cast<std::size_t>(index)].detectedSlot;
 }
 
+std::optional<std::string> MidiEditor::getChordBlockLabel(int index) const
+{
+    if (index < 0 || index >= static_cast<int>(_chordBlocks.size()))
+        return std::nullopt;
+    return _chordBlocks[static_cast<std::size_t>(index)].label;
+}
+
 theory::MidiEditorState MidiEditor::getState() const
 {
     theory::MidiEditorState state;
@@ -571,6 +578,8 @@ void MidiEditor::mouseDown(const juce::MouseEvent& event)
 
     _dragStartMouse = event.position;
     _lastMousePosition = event.position;
+    _pressedChordBlockIndex = -1;
+    _chordBlockDragGestureStarted = false;
 
     if (isInLoopHandleZone(event.position, true))
     {
@@ -621,6 +630,17 @@ void MidiEditor::mouseDown(const juce::MouseEvent& event)
         return;
     }
 
+    if (isInChordLaneZone(event.position))
+    {
+        // A click that lands in the lane but hits no block's segment (the gaps between chords, or
+        // past the last one) starts no drag mode at all - it's neither a note gesture nor a
+        // marquee-select region, so mouseDrag/mouseUp both just see DragMode::None and no-op.
+        _pressedChordBlockIndex = hitTestChordBlock(event.position);
+        if (_pressedChordBlockIndex >= 0)
+            _dragMode = DragMode::DragChordBlockOut;
+        return;
+    }
+
     // Nothing hit - starts a rubber-band selection; mouseUp decides whether this was actually a
     // drag (select everything the rect ends up covering) or just a plain click (deselect).
     _dragMode = DragMode::MarqueeSelect;
@@ -631,6 +651,22 @@ void MidiEditor::mouseDown(const juce::MouseEvent& event)
 void MidiEditor::mouseDrag(const juce::MouseEvent& event)
 {
     _lastMousePosition = event.position;
+
+    if (_dragMode == DragMode::DragChordBlockOut)
+    {
+        if (_chordBlockDragGestureStarted || _pressedChordBlockIndex < 0)
+            return;
+
+        if (_dragStartMouse.getDistanceFrom(event.position) < kClickVsDragThreshold)
+            return;
+
+        _chordBlockDragGestureStarted = true;
+
+        for (auto* listener : _listeners)
+            listener->onChordBlockDragStarted(_pressedChordBlockIndex);
+        return;
+    }
+
     applyDragAt(event.position);
 }
 
@@ -644,6 +680,8 @@ void MidiEditor::mouseUp(const juce::MouseEvent&)
     _dragMode = DragMode::None;
     _draggedNoteIndex = -1;
     _dragStartSnapshots.clear();
+    _pressedChordBlockIndex = -1;
+    _chordBlockDragGestureStarted = false;
 
     // The timer is now shared with playback repaint (see timerCallback) - only stop it here if
     // nothing else still needs it running.
@@ -658,6 +696,11 @@ void MidiEditor::mouseUp(const juce::MouseEvent&)
         _loopManuallyAdjusted = true;
         if (_progressionPlayer != nullptr)
             _progressionPlayer->setLoopBounds(_loopStartBeat, _loopEndBeat);
+    }
+    else if (finishedDragMode == DragMode::DragChordBlockOut)
+    {
+        // A pure export gesture (or a plain click on a chord segment) - no note content changed,
+        // so no notifyContentChanged() here, unlike the generic didDrag branch below.
     }
     else if (finishedDragMode == DragMode::MarqueeSelect)
     {
@@ -997,8 +1040,8 @@ void MidiEditor::paintGutter(juce::Graphics& g) const
     juce::Graphics::ScopedSaveState saved(g);
     g.reduceClipRegion(juce::Rectangle<float>(0.f, _contentArea.getY(), kGutterWidth, _contentArea.getHeight()).toNearestInt());
 
-    const auto whiteKeyColour = juce::Colour(0xFFD9D9D9);
-    const auto blackKeyColour = nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce();
+    const auto whiteKeyColour = juce::Colour(0xFFE2DBDC);
+    const auto blackKeyColour = juce::Colour(0xFF222122);
 
     for (int midiNote = kMinMidiNote; midiNote <= kMaxMidiNote; ++midiNote)
     {
@@ -1027,7 +1070,7 @@ void MidiEditor::paintGutter(juce::Graphics& g) const
     g.drawVerticalLine(0, _contentArea.getY(), _contentArea.getBottom());
     g.drawVerticalLine(static_cast<int>(kGutterWidth), _contentArea.getY(), _contentArea.getBottom());
 
-    g.setColour(nui::Theme::newColor(nui::Theme::ThemeColor::BACKGROUND).asJuce()); // dark text over the light #D9D9D9 white-key cells
+    g.setColour(juce::Colour(0xFF222122)); // dark text over the light #D9D9D9 white-key cells
     g.setFont(nui::Theme::newFont(nui::Theme::REGULAR, nui::Theme::SMALL));
 
     for (int midiNote = kMinMidiNote; midiNote <= kMaxMidiNote; ++midiNote)
@@ -1164,6 +1207,28 @@ bool MidiEditor::isInLoopHandleZone(juce::Point<float> position, bool startHandl
     return position.x >= edge - kResizeHandleWidth && position.x <= edge + kResizeHandleWidth;
 }
 
+bool MidiEditor::isInChordLaneZone(juce::Point<float> position) const
+{
+    return position.y >= _contentArea.getBottom() && position.y <= static_cast<float>(getHeight());
+}
+
+int MidiEditor::hitTestChordBlock(juce::Point<float> position) const
+{
+    if (!isInChordLaneZone(position))
+        return -1;
+
+    for (int i = 0; i < static_cast<int>(_chordBlocks.size()); ++i)
+    {
+        const auto& block = _chordBlocks[static_cast<std::size_t>(i)];
+        const auto startX = beatToX(block.startBeat);
+        const auto endX = beatToX(block.startBeat + block.lengthBeats);
+        if (position.x >= startX && position.x <= endX)
+            return i;
+    }
+
+    return -1;
+}
+
 void MidiEditor::applyDragAt(juce::Point<float> position)
 {
     if (_dragMode == DragMode::None)
@@ -1257,20 +1322,25 @@ void MidiEditor::updateHoverState(juce::Point<float> position)
     const auto noteIndex = hitTestNote(position);
     const auto isLeftResize = noteIndex >= 0 && isInNoteResizeZone(noteIndex, position, true);
     const auto isResize = noteIndex >= 0 && (isLeftResize || isInNoteResizeZone(noteIndex, position, false));
+    // hitTestChordBlock already returns -1 outside the lane, so this is naturally -1 whenever a note
+    // was already hit above (the lane and the note grid never overlap spatially anyway).
+    const auto chordBlockIndex = hitTestChordBlock(position);
 
-    if (noteIndex == _hoveredNoteIndex && isResize == _hoveredIsResizeZone && isLeftResize == _hoveredResizeIsLeftEdge)
+    if (noteIndex == _hoveredNoteIndex && isResize == _hoveredIsResizeZone && isLeftResize == _hoveredResizeIsLeftEdge
+        && chordBlockIndex == _hoveredChordBlockIndex)
         return;
 
     _hoveredNoteIndex = noteIndex;
     _hoveredIsResizeZone = isResize;
     _hoveredResizeIsLeftEdge = isLeftResize;
+    _hoveredChordBlockIndex = chordBlockIndex;
 
-    if (noteIndex < 0)
-        setMouseCursor(juce::MouseCursor::NormalCursor);
-    else if (isResize)
-        setMouseCursor(juce::MouseCursor::LeftRightResizeCursor);
-    else
+    if (noteIndex >= 0)
+        setMouseCursor(isResize ? juce::MouseCursor::LeftRightResizeCursor : juce::MouseCursor::DraggingHandCursor);
+    else if (chordBlockIndex >= 0)
         setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+    else
+        setMouseCursor(juce::MouseCursor::NormalCursor);
 
     repaint();
 }

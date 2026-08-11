@@ -35,6 +35,10 @@ namespace
         int contentChangedCount = 0;
         int fileDroppedCount = 0;
         double lastFileDroppedBeat = -1.0;
+        int playbackStateChangedCount = 0;
+        bool lastPlaybackState = false;
+        int chordBlockDragStartedCount = 0;
+        int lastChordBlockDragIndex = -1;
 
         void onChordFileDropped(double startBeat, const juce::String&) override
         {
@@ -43,7 +47,43 @@ namespace
         }
         void onProgressionDragStarted() override {}
         void onContentChanged() override { ++contentChangedCount; }
+        void onPlaybackStateChanged(bool isPlaying) override
+        {
+            ++playbackStateChangedCount;
+            lastPlaybackState = isPlaying;
+        }
+        void onChordBlockDragStarted(int chordBlockIndex) override
+        {
+            ++chordBlockDragStartedCount;
+            lastChordBlockDragIndex = chordBlockIndex;
+        }
     };
+
+    // Mirrors MidiEditorTests.cpp's own local constants/helper (this codebase's convention -
+    // per-file duplication rather than a shared test helper) - just enough to reach into the
+    // MidiEditor child's chord lane at its known, unzoomed/unscrolled default layout.
+    constexpr float kGutterWidth = 40.f;
+    constexpr float kPixelsPerBeat = 80.f;
+    constexpr float kScrollbarThickness = 8.f;
+    constexpr float kChordLaneHeight = 28.f;
+
+    float beatToX(double beat) { return kGutterWidth + static_cast<float>(beat) * kPixelsPerBeat; }
+    float chordLaneY(float editorHeight) { return editorHeight - kScrollbarThickness - kChordLaneHeight; }
+
+    juce::MouseEvent makeMouseEvent(juce::Component& component, juce::Point<float> position)
+    {
+        return juce::MouseEvent(
+            juce::Desktop::getInstance().getMainMouseSource(),
+            position,
+            juce::ModifierKeys(),
+            0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+            &component, &component,
+            juce::Time::getCurrentTime(),
+            position,
+            juce::Time::getCurrentTime(),
+            1,
+            false);
+    }
 
     // Both nelement::SVGButton and nelement::TextButton wrap a single, always-first, internal
     // juce::Button child that actually receives clicks - triggerClick() drives their real onClick
@@ -190,6 +230,42 @@ TEST_CASE("ProgressionEditor: a chord file dropped on the MidiEditor bubbles up 
     sequencer.removeListener(&listener);
 }
 
+TEST_CASE("ProgressionEditor: a MidiEditor chord lane drag bubbles up to this component's own listeners", "[ProgressionEditor]")
+{
+    const Chord& chord = realChord(Degree::I);
+
+    ProgressionEditor sequencer("test-sequencer",
+        [](const ProgressionSlot&) -> const Chord* { return nullptr; });
+    sequencer.setBounds(0, 0, 800, 400);
+    sequencer.addChordAtBeat(0.0, chord); // occupies beats [0, 4)
+
+    RecordingListener listener;
+    sequencer.addListener(&listener);
+
+    auto* midiEditor = dynamic_cast<MidiEditor*>(sequencer.findChildWithID("progression-midi-editor"));
+    REQUIRE(midiEditor != nullptr);
+
+    // ProgressionEditor's own grid gives _midiEditor a fraction of the 800x400 sequencer's height
+    // (it shares the grid with the preset/drag-handle header row) - override its bounds directly so
+    // this file's beatToX/chordLaneY constants (mirroring MidiEditor.cpp's own fixed layout at an
+    // 800x400 size) apply exactly as they do in MidiEditorTests.cpp's own tests.
+    midiEditor->setBounds(0, 0, 800, 400);
+
+    const auto laneY = chordLaneY(400.f) + kChordLaneHeight * 0.5f;
+    const juce::Point<float> start { beatToX(1.0), laneY };
+    const juce::Point<float> dragged { beatToX(1.0) + 10.f, laneY }; // past the 3px click-vs-drag threshold
+
+    midiEditor->mouseDown(makeMouseEvent(*midiEditor, start));
+    midiEditor->mouseDrag(makeMouseEvent(*midiEditor, dragged));
+
+    CHECK(listener.chordBlockDragStartedCount == 1);
+    CHECK(listener.lastChordBlockDragIndex == 0);
+
+    midiEditor->mouseUp(makeMouseEvent(*midiEditor, dragged));
+
+    sequencer.removeListener(&listener);
+}
+
 TEST_CASE("ProgressionEditor: a MidiEditor content change bubbles up to this component's own listeners", "[ProgressionEditor]")
 {
     const Chord& chord = realChord(Degree::I);
@@ -236,4 +312,124 @@ TEST_CASE("ProgressionEditor: clicking the play button toggles playback and swap
 
     CHECK_FALSE(midiEditor->isPlaying());
     CHECK(playButton->getIconBinary() == nui::Icons::getPlay());
+}
+
+TEST_CASE("ProgressionEditor: a MidiEditor playback state change bubbles up to this component's own listeners", "[ProgressionEditor]")
+{
+    ProgressionPlayer player;
+    const Chord& chord = ChordDatabase::getInstance().get(Key::C, Scale::Major).degrees.front().chords.front();
+
+    ProgressionEditor sequencer("test-sequencer",
+        [](const ProgressionSlot&) -> const Chord* { return nullptr; },
+        &player);
+    sequencer.setBounds(0, 0, 800, 400);
+    sequencer.addChordAtBeat(0.0, chord);
+
+    RecordingListener listener;
+    sequencer.addListener(&listener);
+
+    auto* playButton = dynamic_cast<nelement::SVGButton*>(sequencer.findChildWithID("progression-play-button"));
+    REQUIRE(playButton != nullptr);
+
+    triggerButtonClick(*playButton);
+    CHECK(listener.playbackStateChangedCount == 1);
+    CHECK(listener.lastPlaybackState);
+
+    triggerButtonClick(*playButton);
+    CHECK(listener.playbackStateChangedCount == 2);
+    CHECK_FALSE(listener.lastPlaybackState);
+
+    sequencer.removeListener(&listener);
+}
+
+TEST_CASE("ProgressionEditor: chord-block and playback forwarding getters match the underlying MidiEditor", "[ProgressionEditor]")
+{
+    ProgressionPlayer player;
+    const Chord& chord = realChord(Degree::I);
+
+    ProgressionEditor sequencer("test-sequencer",
+        [](const ProgressionSlot&) -> const Chord* { return nullptr; },
+        &player);
+    sequencer.setBounds(0, 0, 800, 400);
+
+    auto* midiEditor = dynamic_cast<MidiEditor*>(sequencer.findChildWithID("progression-midi-editor"));
+    REQUIRE(midiEditor != nullptr);
+
+    sequencer.addChordAtBeat(0.0, chord);
+
+    REQUIRE(sequencer.getChordBlockCount() == midiEditor->getChordBlockCount());
+    REQUIRE(sequencer.getChordBlockCount() > 0);
+    CHECK(sequencer.getChordBlockStartBeat(0) == midiEditor->getChordBlockStartBeat(0));
+    CHECK(sequencer.getChordBlockLengthBeats(0) == midiEditor->getChordBlockLengthBeats(0));
+    CHECK(sequencer.getChordBlockLabel(0) == midiEditor->getChordBlockLabel(0));
+
+    CHECK_FALSE(sequencer.isPlaying());
+    sequencer.startPlayback();
+    CHECK(sequencer.isPlaying());
+    CHECK(midiEditor->isPlaying());
+    sequencer.stopPlayback();
+    CHECK_FALSE(sequencer.isPlaying());
+    CHECK_FALSE(midiEditor->isPlaying());
+}
+
+TEST_CASE("ProgressionEditor: loadPreset then Play schedules every chord's notes, including the last one", "[ProgressionEditor]")
+{
+    ProgressionPlayer player;
+    const Chord& chordI = realChord(Degree::I);
+    const Chord& chordIV = realChord(Degree::IV);
+    const Chord& chordV = realChord(Degree::V);
+    const Chord& chordVI = realChord(Degree::VI);
+
+    ProgressionEditor sequencer("test-sequencer",
+        [&](const ProgressionSlot& slot) -> const Chord*
+        {
+            if (slot.degree == Degree::I) return &chordI;
+            if (slot.degree == Degree::IV) return &chordIV;
+            if (slot.degree == Degree::V) return &chordV;
+            if (slot.degree == Degree::VI) return &chordVI;
+            return nullptr;
+        },
+        &player);
+    sequencer.setBounds(0, 0, 800, 400);
+
+    ProgressionPreset preset;
+    preset.id = "test-preset";
+    preset.slots = { ProgressionSlot { Degree::I, 0 }, ProgressionSlot { Degree::IV, 0 },
+                      ProgressionSlot { Degree::V, 0 }, ProgressionSlot { Degree::VI, 0 } };
+    sequencer.loadPreset(preset);
+
+    auto* playButton = dynamic_cast<nelement::SVGButton*>(sequencer.findChildWithID("progression-play-button"));
+    REQUIRE(playButton != nullptr);
+    triggerButtonClick(*playButton);
+    REQUIRE(player.isPlaying());
+
+    // Step through just over one full loop pass in small blocks, matching a real audio callback
+    // (not one giant call) - real MIDI note numbers only start at their own bar, so a note-on's
+    // cumulative sample offset tells us which chord (bar) it belongs to.
+    constexpr double kSampleRate = 44100.0;
+    constexpr double kBpm = 120.0;
+    constexpr int kBlockSize = 512;
+    const auto samplesPerBeat = (60.0 / kBpm) * kSampleRate;
+    const auto loopLengthSamples = static_cast<int>(4.0 * MidiEditor::kBeatsPerBar * samplesPerBeat);
+
+    std::vector<int> noteOnOffsets;
+    int samplesProcessed = 0;
+    while (samplesProcessed < loopLengthSamples + kBlockSize)
+    {
+        juce::MidiBuffer buffer;
+        player.renderNextBlock(buffer, kBlockSize, kSampleRate, kBpm);
+        for (const auto metadata : buffer)
+            if (metadata.getMessage().isNoteOn())
+                noteOnOffsets.push_back(samplesProcessed + metadata.samplePosition);
+        samplesProcessed += kBlockSize;
+    }
+
+    // One onset-cluster expected per bar (0, 1, 2, 3) - assert the 4th (last) bar's cluster exists,
+    // not just that *some* note-on happened somewhere in the pass.
+    const auto lastChordStartSamples = 3.0 * MidiEditor::kBeatsPerBar * samplesPerBeat;
+    const auto lastChordEndSamples = 4.0 * MidiEditor::kBeatsPerBar * samplesPerBeat;
+    const auto lastChordOnsets = std::count_if(noteOnOffsets.begin(), noteOnOffsets.end(),
+        [&](int offset) { return offset >= lastChordStartSamples && offset < lastChordEndSamples; });
+
+    CHECK(lastChordOnsets > 0);
 }

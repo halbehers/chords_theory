@@ -19,6 +19,7 @@ VisualSettings::VisualSettings(const std::string& identifier):
     _themeSwitch.setSelectedInvertedTextColor(true);
     _themeSwitch.setHeightType(nui::Theme::HeightType::THIN);
     _themeSwitch.setRounded(true);
+    _themeSwitch.setThumbColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
 
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
 

@@ -35,6 +35,7 @@ public:
 private:
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
+    nelement::SVGButton _icon;
     nelement::Text _label;
 
     bool _dragGestureStarted = false;

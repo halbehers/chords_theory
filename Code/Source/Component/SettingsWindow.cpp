@@ -7,6 +7,8 @@ namespace component
 SettingsWindow::SettingsWindow(const std::string& identifier, nlayout::WindowsManager& windowsManager, PluginAudioProcessor& audioProcessor):
     Window(identifier, nlayout::Distance<>(100, nlayout::Distance<>::PERCENTAGE), nlayout::Distance<>(100, nlayout::Distance<>::PERCENTAGE)),
     _windowsManager(windowsManager),
+    _audioProcessor(audioProcessor),
+    _inputSettings("settings-input", audioProcessor),
     _outputSettings("settings-output", audioProcessor)
 {
     setMovable(false);
@@ -26,16 +28,39 @@ SettingsWindow::SettingsWindow(const std::string& identifier, nlayout::WindowsMa
 
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
 
+    // InputSettings only has real content (a MIDI input picker) in the Standalone build - a plugin
+    // format's MIDI input is host-routed, so there's nothing to configure there at all. Rather than
+    // add it and leave it visually empty, it's left out of the layout entirely for non-Standalone
+    // wrapper types, so it never appears.
+    const auto isStandalone = audioProcessor.wrapperType == juce::AudioProcessor::wrapperType_Standalone;
+
     _layout.setGap(24.f);
     _layout.setDisplayGrid(false);
-    _layout.init({ 1, 3, 3 }, { 4, 5 });
 
-    _layout.setFixedRowHeight(0, 42.f);
+    if (isStandalone)
+    {
+        // Left column stacks three single-row sections (Visual, Language, then Input at the
+        // bottom, since it's the newest and lightest of the three); Output remains the sole right
+        // column, now spanning all three content rows to match the taller left stack.
+        _layout.init({ 1, 3, 3, 3 }, { 4, 5 });
+        _layout.setFixedRowHeight(0, 42.f);
 
-    _layout.addComponent(_title, 0, 0, 2, 1);
-    _layout.addComponent(_visualSettings, 1, 0, 1, 1);
-    _layout.addComponent(_outputSettings, 1, 1, 1, 2);
-    _layout.addComponent(_languageSettings, 2, 0, 1, 1);
+        _layout.addComponent(_title, 0, 0, 2, 1);
+        _layout.addComponent(_visualSettings, 1, 0, 1, 1);
+        _layout.addComponent(_languageSettings, 2, 0, 1, 1);
+        _layout.addComponent(_inputSettings, 3, 0, 1, 1);
+        _layout.addComponent(_outputSettings, 1, 1, 1, 3);
+    }
+    else
+    {
+        _layout.init({ 1, 3, 3 }, { 4, 5 });
+        _layout.setFixedRowHeight(0, 42.f);
+
+        _layout.addComponent(_title, 0, 0, 2, 1);
+        _layout.addComponent(_visualSettings, 1, 0, 1, 1);
+        _layout.addComponent(_languageSettings, 2, 0, 1, 1);
+        _layout.addComponent(_outputSettings, 1, 1, 1, 2);
+    }
 
     _titleIcon.toFront(false);
     _closeButton.toFront(false);
@@ -100,8 +125,8 @@ void SettingsWindow::resized()
 
 juce::Rectangle<int> SettingsWindow::getCardBounds()
 {
-    constexpr int maxCardWidth = 650;
-    constexpr int maxCardHeight = 400;
+    const int maxCardWidth = _audioProcessor.isStandalone() ? 650 : 500;
+    const int maxCardHeight = _audioProcessor.isStandalone() ? 450 : 300;
 
     const auto margin = juce::jmax(32, juce::jmin(getWidth(), getHeight()) / 8);
     const auto available = getLocalBounds().reduced(margin);

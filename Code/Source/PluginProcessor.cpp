@@ -28,6 +28,7 @@ PluginAudioProcessor::PluginAudioProcessor()
                     { nui::Theme::PRIMARY, juce::Colour(0xFF272727) },
                     { nui::Theme::ACCENT, juce::Colour(0xFF53F4FB) },
                     { nui::Theme::SECONDARY_ACCENT, juce::Colour(0xFFE19EA9) },
+                    { nui::Theme::TERTIARY_ACCENT, juce::Colour(0xFF39B0C1) },
                     { nui::Theme::BACKGROUND, juce::Colour(0xFF222122) },
                     { nui::Theme::SECONDARY_BACKGROUND, juce::Colour(0xFF333233) },
                     { nui::Theme::BORDER, juce::Colour(0xFF505050) },
@@ -42,8 +43,9 @@ PluginAudioProcessor::PluginAudioProcessor()
                     { nui::Theme::PRIMARY, juce::Colour(0xFFCAC8C7) },
                     { nui::Theme::ACCENT, juce::Colour(0xFF39B0C1) },
                     { nui::Theme::SECONDARY_ACCENT, juce::Colour(0xFFE17C8C) },
-                    { nui::Theme::BACKGROUND, juce::Colour(0xFFFFFFFF) },
-                    { nui::Theme::SECONDARY_BACKGROUND, juce::Colour(0xFFF0EDEC) },
+                    { nui::Theme::TERTIARY_ACCENT, juce::Colour(0xFF39B0C1) },
+                    { nui::Theme::BACKGROUND, juce::Colour(0xFFE2DBDC) },
+                    { nui::Theme::SECONDARY_BACKGROUND, juce::Colour(0xFFD6CBCC) },
                     { nui::Theme::BORDER, juce::Colour(0xFFA5A5A5) },
                 }
             }

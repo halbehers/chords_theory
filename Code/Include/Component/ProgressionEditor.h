@@ -1,6 +1,8 @@
 #pragma once
 
 #include <functional>
+#include <optional>
+#include <string>
 #include <vector>
 
 #include <nierika_dsp/nierika_dsp.h>
@@ -49,6 +51,17 @@ public:
         // preset load) - the owner uses this to keep persisted session state in sync, rather than
         // needing a separate hook per mutation path. Mirrors MidiEditor::Listener::onContentChanged.
         virtual void onContentChanged() = 0;
+
+        // Fired whenever the owned MidiEditor's playback starts/stops - mirrors
+        // MidiEditor::Listener::onPlaybackStateChanged exactly. Lets any number of other UI surfaces
+        // (e.g. a play/stop button and a live playhead display elsewhere in the app) stay in sync
+        // with the single MidiEditor that's actually the source of truth for playback state.
+        virtual void onPlaybackStateChanged(bool isPlaying) = 0;
+
+        // The user started dragging chordBlockIndex's segment out of the owned MidiEditor's own
+        // chord lane - mirrors MidiEditor::Listener::onChordBlockDragStarted exactly, same index
+        // space as getChordBlockStartBeat/getChordBlockLengthBeats/getChordBlockLabel above.
+        virtual void onChordBlockDragStarted(int chordBlockIndex) = 0;
     };
 
     // progressionPlayer is nullable (defaults to null so any test constructing without one keeps
@@ -87,6 +100,24 @@ public:
     [[nodiscard]] theory::MidiEditorState getMidiEditorState() const { return _midiEditor.getState(); }
     void restoreMidiEditorState(const theory::MidiEditorState& state) { _midiEditor.restoreState(state); }
 
+    // Thin forwards to the owned MidiEditor's own chord-block accessors, for other components (e.g.
+    // a mini progression timeline elsewhere in the app) that want to display the current chord lane
+    // without reaching past this class into MidiEditor directly (see MidiEditor.h's own comment on
+    // that invariant). getChordBlockSlot isn't forwarded - nothing outside this class needs it yet.
+    [[nodiscard]] int getChordBlockCount() const { return _midiEditor.getChordBlockCount(); }
+    [[nodiscard]] std::optional<double> getChordBlockStartBeat(int index) const { return _midiEditor.getChordBlockStartBeat(index); }
+    [[nodiscard]] std::optional<double> getChordBlockLengthBeats(int index) const { return _midiEditor.getChordBlockLengthBeats(index); }
+    [[nodiscard]] std::optional<std::string> getChordBlockLabel(int index) const { return _midiEditor.getChordBlockLabel(index); }
+
+    // Thin forwards to the owned MidiEditor's own playback controls, so another play/stop button
+    // elsewhere in the app (see AppLayout's Synth-tab one) drives playback through the same path
+    // this class's own _playButton already uses - never call audio::ProgressionPlayer::play()/stop()
+    // directly from outside MidiEditor, that would bypass its note-buffer setup and skip the
+    // onPlaybackStateChanged notification that keeps every listening button's icon in sync.
+    [[nodiscard]] bool isPlaying() const { return _midiEditor.isPlaying(); }
+    void startPlayback() { _midiEditor.startPlayback(); }
+    void stopPlayback() { _midiEditor.stopPlayback(); }
+
     void addListener(Listener* listener);
     void removeListener(Listener* listener);
 
@@ -94,6 +125,7 @@ private:
     void onChordFileDropped(double startBeat, const juce::String& filePath) override;
     void onContentChanged() override;
     void onPlaybackStateChanged(bool isPlaying) override;
+    void onChordBlockDragStarted(int chordBlockIndex) override;
     void onPresetSelected(const theory::ProgressionPreset& preset) override;
     void onProgressionDragStarted() override;
     void onButtonClick(const std::string& componentID) override;

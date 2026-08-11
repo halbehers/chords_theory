@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <string>
 #include <vector>
 
 #include <nierika_dsp/nierika_dsp.h>
@@ -59,6 +60,14 @@ public:
         // the very notes a playing loop was referencing). Default no-op, same convention as
         // onContentChanged.
         virtual void onPlaybackStateChanged(bool isPlaying) { juce::ignoreUnused(isPlaying); }
+
+        // The user started dragging chordBlockIndex's segment in the chord lane - past the
+        // minimum-distance threshold, so this never fires for a plain click. Same index space as
+        // getChordBlockStartBeat/getChordBlockLengthBeats/getChordBlockLabel below - the owner
+        // resolves it back to that block's own notes and performs the actual OS-level drag itself
+        // (see MidiExporter/AppLayout), same division of responsibility as onChordFileDropped.
+        // Default no-op, same convention as onContentChanged.
+        virtual void onChordBlockDragStarted(int chordBlockIndex) { juce::ignoreUnused(chordBlockIndex); }
     };
 
     // Exposed so callers spacing consecutive chords/presets one bar apart (see
@@ -98,6 +107,7 @@ public:
     [[nodiscard]] std::optional<double> getChordBlockStartBeat(int index) const;
     [[nodiscard]] std::optional<double> getChordBlockLengthBeats(int index) const;
     [[nodiscard]] std::optional<theory::ProgressionSlot> getChordBlockSlot(int index) const;
+    [[nodiscard]] std::optional<std::string> getChordBlockLabel(int index) const;
 
     // Pure-data snapshot of the current notes/chord-blocks, and the inverse - used to bridge into
     // Theory::SessionState (DAW project persistence) and Theory::MidiExporter (exact-content drag
@@ -160,7 +170,7 @@ private:
         theory::ProgressionSlot detectedSlot;
     };
 
-    enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, ResizeLoopStart, ResizeLoopEnd, MarqueeSelect };
+    enum class DragMode { None, MoveNote, ResizeNoteStart, ResizeNoteEnd, ResizeLoopStart, ResizeLoopEnd, MarqueeSelect, DragChordBlockOut };
 
     void timerCallback() override; // drag-triggered auto-scroll, and while playing, playhead repaint
 
@@ -185,6 +195,12 @@ private:
     [[nodiscard]] int hitTestNote(juce::Point<float>) const;
     [[nodiscard]] bool isInNoteResizeZone(int noteIndex, juce::Point<float>, bool leftEdge) const;
     [[nodiscard]] bool isInLoopHandleZone(juce::Point<float>, bool startHandle) const;
+    // True when position falls within the chord lane strip along the bottom - same region
+    // paintChordLane() draws into.
+    [[nodiscard]] bool isInChordLaneZone(juce::Point<float>) const;
+    // Index into _chordBlocks whose segment position falls under, or -1 if the lane was clicked
+    // between/outside segments. Only meaningful when isInChordLaneZone(position) is also true.
+    [[nodiscard]] int hitTestChordBlock(juce::Point<float>) const;
 
     // gestures
     void applyDragAt(juce::Point<float> position);
@@ -247,6 +263,7 @@ private:
     int _hoveredNoteIndex = -1;
     bool _hoveredIsResizeZone = false;
     bool _hoveredResizeIsLeftEdge = false;
+    int _hoveredChordBlockIndex = -1; // drives the drag cursor over a chord lane segment
     bool _isHovering = false;
 
     // Multi-select. _selectedNoteIndices are plain indices into _notes - invalidated (cleared)
@@ -263,6 +280,12 @@ private:
     double _loopStartBeat = 0.0;
     double _loopEndBeat = kBeatsPerBar;
     bool _loopManuallyAdjusted = false;
+
+    // Chord-lane drag-out gesture (DragMode::DragChordBlockOut) - which block mouseDown landed on
+    // (-1 if none/not in the lane) and whether the click-vs-drag threshold has already fired
+    // onChordBlockDragStarted for it this gesture, so it only fires once.
+    int _pressedChordBlockIndex = -1;
+    bool _chordBlockDragGestureStarted = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MidiEditor)
 };

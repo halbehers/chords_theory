@@ -167,6 +167,15 @@ void ProgressionEditor::onPlaybackStateChanged(bool isPlaying)
     // playback stops "from underneath" (e.g. clear()/restoreState() via a preset load), not just
     // in response to this button's own click.
     _playButton.setIconBinary(isPlaying ? nui::Icons::getStop() : nui::Icons::getPlay());
+
+    for (auto* listener : _listeners)
+        listener->onPlaybackStateChanged(isPlaying);
+}
+
+void ProgressionEditor::onChordBlockDragStarted(int chordBlockIndex)
+{
+    for (auto* listener : _listeners)
+        listener->onChordBlockDragStarted(chordBlockIndex); // pure bubble-up, never resolves itself
 }
 
 void ProgressionEditor::onPresetSelected(const theory::ProgressionPreset& preset)

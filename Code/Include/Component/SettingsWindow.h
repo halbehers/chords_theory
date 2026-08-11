@@ -4,6 +4,7 @@
 
 #include "PluginProcessor.h"
 #include "Component/VisualSettings.h"
+#include "Component/InputSettings.h"
 #include "Component/OutputSettings.h"
 #include "Component/LanguageSettings.h"
 
@@ -39,7 +40,10 @@ private:
 
     nlayout::GridLayout<nui::Component> _layout { *this };
 
+    PluginAudioProcessor& _audioProcessor;
+
     VisualSettings _visualSettings { "settings-visual" };
+    InputSettings _inputSettings;
     OutputSettings _outputSettings;
     LanguageSettings _languageSettings { "settings-language" };
 

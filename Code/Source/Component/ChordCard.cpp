@@ -34,6 +34,8 @@ ChordCard::ChordCard(const std::string& identifier, theory::Degree degree):
     setTooltip(juce::translate("chord_card_tooltip").toStdString());
     setTooltipEnabled(true);
 
+    setMouseCursor(juce::MouseCursor::DraggingHandCursor);
+
     _layout.setGap(2.f);
     _layout.setDisplayGrid(false);
     _layout.init({ 1, 2 }, { 1 });

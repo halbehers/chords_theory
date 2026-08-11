@@ -28,6 +28,7 @@ OutputSettings::OutputSettings(const std::string& identifier, PluginAudioProcess
     _trimSwitch.setSelectedInvertedTextColor(true);
     _trimSwitch.setHeightType(nui::Theme::HeightType::THIN);
     _trimSwitch.setRounded(true);
+    _trimSwitch.setThumbColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
 
     
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
