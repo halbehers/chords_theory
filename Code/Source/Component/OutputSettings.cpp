@@ -215,6 +215,12 @@ void OutputSettings::changeListenerCallback(juce::ChangeBroadcaster* source)
 
     if (_deviceManager != nullptr && source == _deviceManager)
     {
+        // AudioDeviceManager broadcasts this for its own settings changing AND for the OS-level
+        // device list changing (a device being plugged/unplugged - see its own
+        // audioDeviceListChanged()/sendChangeMessage()) - refresh the combo box's item list first
+        // so a newly-connected device actually becomes selectable, then re-sync which item that
+        // list's current selection should point at.
+        _devicesComboBox.getComboBox().refreshDevices(juce::dontSendNotification);
         syncDeviceComboBoxesFromCurrentState();
         return;
     }
