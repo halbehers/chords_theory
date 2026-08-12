@@ -24,6 +24,7 @@ ProgressionEditor::ProgressionEditor(const std::string& identifier, ChordResolve
     _midiEditor("progression-midi-editor", progressionPlayer)
 {
     _presetPicker.addListener(this);
+    _presetPicker.setTickedColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
 
     _savePresetButton.setIconSize(16.f);
     _savePresetButton.addOnClickListener(this);

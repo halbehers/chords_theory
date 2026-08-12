@@ -24,6 +24,8 @@ KeyScaleSelector::KeyScaleSelector(const std::string& identifier):
 
     _keyPicker.setHeightType(nui::Theme::HeightType::THIN);
     _scalePicker.setHeightType(nui::Theme::HeightType::THIN);
+    _keyPicker.setTickedColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
+    _scalePicker.setTickedColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
 
     _keyLabel.setText(juce::translate("key_scale_selector_key_label").toStdString());
     _scaleLabel.setText(juce::translate("key_scale_selector_scale_label").toStdString());

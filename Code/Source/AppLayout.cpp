@@ -57,40 +57,48 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _mainSection.addPanel("synth-tab", juce::translate("synth_tab_label").toStdString());
 
     _mainSection.getLayout().setDisplayGrid(false);
-    _mainSection.getLayout().init({ 1, 1, 1, 1, 1 }, { 1, 1, 1, 1, 1, 1, 1, 1, 1 });
+    _mainSection.getLayout().init({ 1, 1, 1, 1, 1 }, { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 });
 
     _mainSection.getLayout().setFixedColumnWidth(0, 24.f);
-    _mainSection.getLayout().setFixedColumnWidth(8, 24.f);
+    _mainSection.getLayout().setFixedColumnWidth(10, 24.f);
     _mainSection.getLayout().setFixedColumnWidth(1, 42.f);
-    _mainSection.getLayout().setFixedColumnWidth(7, 42.f);
-    _mainSection.getLayout().setFixedColumnWidth(4, 450.f);
+    _mainSection.getLayout().setFixedColumnWidth(9, 42.f);
+    _mainSection.getLayout().setFixedColumnWidth(2, 42.f);
+    _mainSection.getLayout().setFixedColumnWidth(8, 42.f);
+    _mainSection.getLayout().setFixedColumnWidth(5, 450.f);
     _mainSection.getLayout().setFixedRowHeight(0, 60.f);
     _mainSection.getLayout().setFixedRowHeight(1, 64.f);
     _mainSection.getLayout().setFixedRowHeight(2, 70.f);
     _mainSection.getLayout().setFixedRowHeight(3, 12.f);
 
     _mainSection.getLayout().addComponent(_settings, 0, 1, 1, 1);
-    _mainSection.getLayout().addComponent(_keyScaleSelector, 0, 4, 1, 1);
-    _mainSection.getLayout().addComponent(_chordBrowser, 1, 3, 3, 1);
-    _mainSection.getLayout().addComponent(_voicingSelector, 2, 0, 9, 1);
-    _mainSection.getLayout().addComponent(_progressionEditor, 4, 1, 7, 1);
+    _mainSection.getLayout().addComponent(_previousHistoryButton, 0, 8, 1, 1);
+    _mainSection.getLayout().addComponent(_nextHistoryButton, 0, 9, 1, 1);
+    _mainSection.getLayout().addComponent(_keyScaleSelector, 0, 5, 1, 1);
+    _mainSection.getLayout().addComponent(_chordBrowser, 1, 4, 3, 1);
+    _mainSection.getLayout().addComponent(_voicingSelector, 2, 0, 11, 1);
+    _mainSection.getLayout().addComponent(_progressionEditor, 4, 1, 9, 1);
 
     _mainSection.getLayout("synth-tab").setDisplayGrid(false);
-    _mainSection.getLayout("synth-tab").init({ 1, 1 }, { 1, 1, 1, 1, 4, 1, 1, 1, 1 });
+    _mainSection.getLayout("synth-tab").init({ 1, 1 }, { 1, 1, 1, 1, 1, 4, 1, 1, 1, 1, 1 });
 
     _mainSection.getLayout("synth-tab").setFixedRowHeight(0, 60.f);
     _mainSection.getLayout("synth-tab").setFixedColumnWidth(0, 24.f);
-    _mainSection.getLayout("synth-tab").setFixedColumnWidth(8, 24.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(10, 24.f);
     _mainSection.getLayout("synth-tab").setFixedColumnWidth(1, 42.f);
-    _mainSection.getLayout("synth-tab").setFixedColumnWidth(7, 42.f);
-    _mainSection.getLayout("synth-tab").setFixedColumnWidth(3, 42.f);
-    _mainSection.getLayout("synth-tab").setFixedColumnWidth(5, 42.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(9, 42.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(2, 42.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(8, 42.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(4, 42.f);
+    _mainSection.getLayout("synth-tab").setFixedColumnWidth(6, 42.f);
 
     _mainSection.getLayout("synth-tab").addComponent(_settings, 0, 1, 1, 1);
-    _mainSection.getLayout("synth-tab").addComponent(_synthPlayButton, 0, 3, 1, 1);
-    _mainSection.getLayout("synth-tab").addComponent(_progressionTimeline, 0, 4, 1, 1);
-    _mainSection.getLayout("synth-tab").addComponent(_dragOutButton, 0, 5, 1, 1);
-    _mainSection.getLayout("synth-tab").addComponent(_synthEditor, 1, 0, 9, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_synthPlayButton, 0, 4, 1, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_progressionTimeline, 0, 5, 1, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_dragOutButton, 0, 6, 1, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_previousHistoryButton, 0, 8, 1, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_nextHistoryButton, 0, 9, 1, 1);
+    _mainSection.getLayout("synth-tab").addComponent(_synthEditor, 1, 0, 11, 1);
 
     getLayout().setGap(16.f);
     getLayout().setDisplayGrid(false);

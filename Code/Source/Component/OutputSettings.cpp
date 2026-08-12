@@ -72,6 +72,10 @@ OutputSettings::OutputSettings(const std::string& identifier, PluginAudioProcess
             _sampleRateComboBox.addOnValueChangedListener(this);
             _bufferSizeComboBox.addOnValueChangedListener(this);
 
+            _devicesComboBox.setTickedColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
+            _sampleRateComboBox.setTickedColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
+            _bufferSizeComboBox.setTickedColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
+
             _deviceManager->addChangeListener(this);
         }
     }

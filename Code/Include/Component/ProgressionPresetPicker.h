@@ -37,6 +37,9 @@ public:
     void addListener(Listener* listener);
     void removeListener(Listener* listener);
 
+    void setTickedColour(juce::Colour colour) { _picker.setTickedColour(colour); }
+    void resetTickedColour() { _picker.resetTickedColour(); }
+
 private:
     void onSelectionChanged(const std::string& componentID, int selectedId) override;
 

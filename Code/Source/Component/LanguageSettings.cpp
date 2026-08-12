@@ -47,6 +47,7 @@ LanguageSettings::LanguageSettings(const std::string& identifier):
     _languagePicker.addOnValueChangedListener(this);
     _languagePicker.setSelectedInvertedTextColor(true);
     _languagePicker.setHeightType(nui::Theme::HeightType::THIN);
+    _languagePicker.setTickedColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
 
     AppLocalisation::getChangeBroadcaster().addChangeListener(this);
 

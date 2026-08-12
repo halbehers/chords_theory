@@ -98,32 +98,20 @@ private:
     component::ChordDegreeBrowser _chordBrowser;
     component::VoicingSelector _voicingSelector { "voicing-selector" };
     component::ProgressionEditor _progressionEditor;
-    // Declared after _progressionEditor - its constructor registers itself as a listener on it, so
-    // _progressionEditor must already be constructed (C++ initializes members in declaration order).
     component::ProgressionTimeline _progressionTimeline;
-    // Mirrors _progressionEditor's own play button - lets playback be started/stopped from the
-    // Synth tab too, driven through the same MidiEditor::startPlayback()/stopPlayback() path (see
-    // ProgressionEditor's forwarding isPlaying()/startPlayback()/stopPlayback()), so both buttons
-    // stay in sync via onPlaybackStateChanged regardless of which one was clicked.
     nelement::SVGButton _synthPlayButton { "synth-play-button", nui::Icons::getPlay() };
     component::DragOutButton _dragOutButton { "drag-out-button" };
     component::SynthEditor _synthEditor;
 
-    // Owns the "Chords"/"Synth" tab switcher - everything above except _settings/_keyScaleSelector
-    // (row 0, always visible) lives inside one of its two panels. A *new*, nested Section, not a
-    // reuse of this class's own inherited nlayout::AppLayout/Section grid (which is what row 0
-    // itself lives in) - see AppLayout.cpp for why tabbing the root directly would also hide row 0.
+    nelement::SVGButton _previousHistoryButton { "previous-history-button", nui::Icons::getArrowLeft() };
+    nelement::SVGButton _nextHistoryButton { "next-history-button", nui::Icons::getArrowRight() };
+
     nui::Section _mainSection;
 
     nlayout::WindowsManager _windowsManager;
 
-    // tempFilePath -> degree, populated in onChordDragStarted() just before starting the OS-level
-    // file drag, consulted by onChordFileDropped() when that same file lands on the MidiEditor
-    // inside this same window - see MidiExporter/MidiEditor for the rest of the mechanism.
     std::unordered_map<juce::String, theory::Degree> _inFlightChordDrags;
 
-    // Which degree the voicing selector is currently showing, if open - used to re-derive the
-    // arrow-target x on resize and to know what to clear when the key/scale changes underneath it.
     std::optional<theory::Degree> _openVoicingDegree;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AppLayout)

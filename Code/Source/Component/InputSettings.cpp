@@ -44,6 +44,7 @@ InputSettings::InputSettings(const std::string& identifier, PluginAudioProcessor
             syncFromCurrentState();
 
             _midiInputComboBox.addOnValueChangedListener(this);
+            _midiInputComboBox.setTickedColour(nui::Theme::newColor(nui::Theme::ThemeColor::TERTIARY_ACCENT).asJuce());
             _deviceManager->addChangeListener(this);
         }
     }
