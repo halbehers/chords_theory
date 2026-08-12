@@ -135,6 +135,7 @@ void MidiEditor::paint(juce::Graphics& g)
         g.reduceClipRegion(_contentArea.toNearestInt());
         paintGridlines(g);
         paintNotes(g);
+        paintDuplicatePreview(g);
         paintMarqueeSelection(g);
     }
 
@@ -672,12 +673,29 @@ void MidiEditor::mouseDrag(const juce::MouseEvent& event)
     applyDragAt(event.position);
 }
 
-void MidiEditor::mouseUp(const juce::MouseEvent&)
+void MidiEditor::mouseUp(const juce::MouseEvent& event)
 {
     const auto finishedDragMode = _dragMode;
     const auto didDrag = finishedDragMode != DragMode::None;
     const auto finishedNoteIndex = _draggedNoteIndex;
     const auto mouseActuallyMoved = _dragStartMouse.getDistanceFrom(_lastMousePosition) > kClickVsDragThreshold;
+
+    // Shift held at *release* (not necessarily for the whole gesture) on a real note-move drag
+    // leaves a duplicate of the selection behind at its pre-drag position - _dragStartSnapshots
+    // already holds exactly that, and is cleared right below, so it's captured here first.
+    // _selectedNoteIndices is left untouched: applyDragAt has been live-updating those same notes
+    // all gesture, so they stay selected at the *new* position; the duplicates land unselected at
+    // the old one. Applied before refreshScrollRanges()/repaint() below so a duplicate landing
+    // outside the post-move content's own extent (e.g. dragging a note from far-right back near
+    // beat 0) is picked up immediately, not only after some later, unrelated edit.
+    const auto shouldDuplicate = finishedDragMode == DragMode::MoveNote && finishedNoteIndex >= 0
+        && mouseActuallyMoved && event.mods.isShiftDown();
+    if (shouldDuplicate)
+    {
+        _notes.reserve(_notes.size() + _dragStartSnapshots.size());
+        for (const auto& snapshot : _dragStartSnapshots)
+            _notes.push_back(snapshot);
+    }
 
     _dragMode = DragMode::None;
     _draggedNoteIndex = -1;
@@ -979,6 +997,33 @@ void MidiEditor::paintNotes(juce::Graphics& g) const
     }
 }
 
+void MidiEditor::paintDuplicatePreview(juce::Graphics& g) const
+{
+    // Live "releasing now will duplicate" preview - only while an actual note-move drag is in
+    // progress with Shift currently held (see applyDragAt's own live read of the same modifier for
+    // the matching cursor swap). _dragStartSnapshots holds each selected note's pre-drag position -
+    // exactly where a duplicate would land if released right now. At zero drag delta this exactly
+    // overlaps the real (not-yet-moved) note underneath, so it only reads as a distinct preview
+    // once the drag has actually separated the two positions - no extra special-casing needed.
+    if (_dragMode != DragMode::MoveNote || _dragStartSnapshots.empty() || !juce::ModifierKeys::currentModifiers.isShiftDown())
+        return;
+
+    const auto accent = nui::Theme::newColor(nui::Theme::ThemeColor::ACCENT).asJuce();
+    g.setColour(accent.withAlpha(.5f));
+
+    for (const auto& snapshot : _dragStartSnapshots)
+    {
+        const juce::Rectangle<float> bounds(beatToX(snapshot.startBeat), pitchToY(snapshot.midiNote) + 1.f,
+            static_cast<float>(snapshot.lengthBeats * static_cast<double>(_pixelsPerBeat)) - 2.f, _rowHeight - 2.f);
+
+        if (bounds.getBottom() < _contentArea.getY() || bounds.getY() > _contentArea.getBottom()
+            || bounds.getRight() < _contentArea.getX() || bounds.getX() > _contentArea.getRight())
+            continue;
+
+        g.drawRoundedRectangle(bounds, 3.f, 1.5f);
+    }
+}
+
 void MidiEditor::paintMarqueeSelection(juce::Graphics& g) const
 {
     if (_dragMode != DragMode::MarqueeSelect || _marqueeRect.isEmpty())
@@ -1236,7 +1281,9 @@ void MidiEditor::applyDragAt(juce::Point<float> position)
     if (_dragMode == DragMode::None)
         return;
 
-    const auto snap = !juce::ModifierKeys::currentModifiers.isShiftDown();
+    // Cmd (not Shift, which now means "duplicate on release" - see mouseUp) disables grid-snapping
+    // for the duration of the drag.
+    const auto snap = !juce::ModifierKeys::currentModifiers.isCommandDown();
     const auto deltaBeats = xToBeat(position.x) - xToBeat(_dragStartMouse.x);
 
     if (_dragMode == DragMode::MoveNote && _draggedNoteIndex >= 0)
@@ -1256,6 +1303,13 @@ void MidiEditor::applyDragAt(juce::Point<float> position)
             note.startBeat = juce::jmax(0.0, snap ? snapBeat(rawStart) : rawStart);
             note.midiNote = juce::jlimit(kMinMidiNote, kMaxMidiNote, snapshot.midiNote + deltaPitchRows);
         }
+
+        // Live "releasing now will duplicate" affordance (see mouseUp) - read the same live
+        // modifier state paintDuplicatePreview() does, so both update together and self-correct if
+        // Shift is pressed/released mid-drag.
+        setMouseCursor(juce::ModifierKeys::currentModifiers.isShiftDown()
+            ? juce::MouseCursor::CopyingCursor : juce::MouseCursor::DraggingHandCursor);
+
         repaint();
     }
     else if (_dragMode == DragMode::ResizeNoteEnd && _draggedNoteIndex >= 0)

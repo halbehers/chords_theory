@@ -50,9 +50,10 @@ public:
         // with the result - this class never resolves chord data itself.
         virtual void onChordFileDropped(double startBeat, const juce::String& filePath) = 0;
 
-        // Fired after any mutation (add/move/resize/delete of a note or chord block) - once per
-        // completed gesture, not continuously mid-drag. Default no-op so listeners that don't care
-        // (there's only ever one method to implement otherwise) aren't forced to override it.
+        // Fired after any mutation (add/move/resize/delete/duplicate of a note or chord block) -
+        // once per completed gesture, not continuously mid-drag. Default no-op so listeners that
+        // don't care (there's only ever one method to implement otherwise) aren't forced to
+        // override it.
         virtual void onContentChanged() {}
 
         // Fired whenever playback starts/stops - both user-initiated (the play/pause button) and
@@ -197,6 +198,9 @@ private:
     void paintGridlines(juce::Graphics&) const;
     void paintChordLane(juce::Graphics&) const;
     void paintNotes(juce::Graphics&) const;
+    // Outline-only preview of where a shift-drag-duplicate (see mouseUp) would leave the selection's
+    // originals if released right now - only drawn mid-drag while Shift is actually held.
+    void paintDuplicatePreview(juce::Graphics&) const;
     void paintRuler(juce::Graphics&) const;
     void paintGutter(juce::Graphics&) const;
     void paintLoopRegion(juce::Graphics&) const;
@@ -291,7 +295,9 @@ private:
     // whenever anything could shift/invalidate them: clear(), restoreState(), and
     // addChordAtBeat's replace-existing-block path. _dragStartSnapshots is a parallel copy of each
     // selected note's state at the moment a group move/resize gesture began, so every note's new
-    // value is computed from its *own* starting point, not the anchor's.
+    // value is computed from its *own* starting point, not the anchor's - it's also the source of
+    // truth mouseUp re-inserts from to leave a duplicate behind on a shift-release note-move drag
+    // (see mouseUp/paintDuplicatePreview), since it's exactly each note's own pre-drag position.
     std::vector<int> _selectedNoteIndices;
     std::vector<MidiNoteBlock> _dragStartSnapshots;
     bool _mouseDownNoteWasAlreadySelected = false;

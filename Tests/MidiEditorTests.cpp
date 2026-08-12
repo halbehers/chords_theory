@@ -44,12 +44,12 @@ namespace
     float beatToX(double beat) { return kGutterWidth + static_cast<float>(beat) * kPixelsPerBeat; }
     float pitchToY(int midiNote) { return kRulerHeight + static_cast<float>(kInitialTopMidiNote - midiNote) * kRowHeight; }
 
-    juce::MouseEvent makeMouseEvent(juce::Component& component, juce::Point<float> position)
+    juce::MouseEvent makeMouseEvent(juce::Component& component, juce::Point<float> position, juce::ModifierKeys mods = juce::ModifierKeys())
     {
         return juce::MouseEvent(
             juce::Desktop::getInstance().getMainMouseSource(),
             position,
-            juce::ModifierKeys(),
+            mods,
             0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
             &component, &component,
             juce::Time::getCurrentTime(),
@@ -122,6 +122,18 @@ namespace
     {
         editor.mouseDown(makeMouseEvent(editor, pos));
         editor.mouseUp(makeMouseEvent(editor, pos));
+    }
+
+    // Same shape as a plain mouseDown/mouseDrag/mouseUp drag sequence, but able to control whether
+    // Shift is "held" at the drag stage vs. the release stage independently - MidiEditor::mouseUp
+    // only consults it at release (event.mods) for the shift-duplicate feature, so tests need to
+    // isolate that from mid-drag Shift state.
+    void dragNote(MidiEditor& editor, juce::Point<float> start, juce::Point<float> dragged, bool shiftAtRelease, bool shiftDuringDrag = false)
+    {
+        const auto shiftMods = juce::ModifierKeys(juce::ModifierKeys::shiftModifier);
+        editor.mouseDown(makeMouseEvent(editor, start));
+        editor.mouseDrag(makeMouseEvent(editor, dragged, shiftDuringDrag ? shiftMods : juce::ModifierKeys()));
+        editor.mouseUp(makeMouseEvent(editor, dragged, shiftAtRelease ? shiftMods : juce::ModifierKeys()));
     }
 }
 
@@ -882,6 +894,150 @@ TEST_CASE("MidiEditor: resizing one selected note's left edge keeps every select
     CHECK(*editor.getNoteStartBeat(0) + *editor.getNoteLengthBeats(0) == Catch::Approx(6.0));
     CHECK(*editor.getNoteStartBeat(1) == Catch::Approx(0.5));
     CHECK(*editor.getNoteStartBeat(1) + *editor.getNoteLengthBeats(1) == Catch::Approx(2.0));
+}
+
+TEST_CASE("MidiEditor: shift-releasing a note drag duplicates it, leaving the original behind and the moved note selected", "[MidiEditor][Duplicate]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64);
+
+    const juce::Point<float> start { beatToX(1.0) + 40.f, pitchToY(64) + 1.f };
+    const juce::Point<float> dragged { start.x + 2.f * kPixelsPerBeat, start.y - 3.f * kRowHeight }; // +2 beats, +3 semitones
+
+    dragNote(editor, start, dragged, /*shiftAtRelease*/ true);
+
+    REQUIRE(editor.getNoteCount() == 2);
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(3.0));
+    CHECK(*editor.getNoteMidiPitch(0) == 67);
+    CHECK(*editor.getNoteStartBeat(1) == Catch::Approx(1.0));
+    CHECK(*editor.getNoteMidiPitch(1) == 64);
+
+    // The moved note (index 0) is the one left selected - deleting the current selection removes
+    // it and leaves only the duplicate (at the original position) behind.
+    editor.keyPressed(juce::KeyPress(juce::KeyPress::deleteKey));
+    REQUIRE(editor.getNoteCount() == 1);
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(1.0));
+    CHECK(*editor.getNoteMidiPitch(0) == 64);
+}
+
+TEST_CASE("MidiEditor: releasing a note drag without Shift just moves it, no duplicate is left behind", "[MidiEditor][Duplicate]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64);
+
+    const juce::Point<float> start { beatToX(1.0) + 40.f, pitchToY(64) + 1.f };
+    const juce::Point<float> dragged { start.x + 2.f * kPixelsPerBeat, start.y };
+
+    dragNote(editor, start, dragged, /*shiftAtRelease*/ false);
+
+    REQUIRE(editor.getNoteCount() == 1);
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(3.0));
+}
+
+TEST_CASE("MidiEditor: shift held during the drag but released before mouseUp does not duplicate", "[MidiEditor][Duplicate]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64);
+
+    const juce::Point<float> start { beatToX(1.0) + 40.f, pitchToY(64) + 1.f };
+    const juce::Point<float> dragged { start.x + 2.f * kPixelsPerBeat, start.y };
+
+    // Shift is held throughout the drag itself, but released before the mouse button comes up -
+    // proves the duplicate decision is read at release, not "held for the whole gesture."
+    dragNote(editor, start, dragged, /*shiftAtRelease*/ false, /*shiftDuringDrag*/ true);
+
+    CHECK(editor.getNoteCount() == 1);
+}
+
+TEST_CASE("MidiEditor: a plain click (no real movement) with Shift held does not duplicate", "[MidiEditor][Duplicate]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64);
+
+    const juce::Point<float> pos { beatToX(1.0) + 40.f, pitchToY(64) + 1.f };
+    const auto shiftMods = juce::ModifierKeys(juce::ModifierKeys::shiftModifier);
+
+    editor.mouseDown(makeMouseEvent(editor, pos));
+    editor.mouseUp(makeMouseEvent(editor, pos, shiftMods));
+
+    CHECK(editor.getNoteCount() == 1);
+}
+
+TEST_CASE("MidiEditor: shift-releasing a group drag duplicates every selected note, preserving relative offsets on both copies", "[MidiEditor][MultiSelect][Duplicate]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64); // index 0 - drag anchor
+    addNoteAt(editor, 5.0, 55); // index 1
+    marqueeSelect(editor, { 100.f, 60.f }, { 480.f, 220.f });
+
+    const juce::Point<float> start { beatToX(1.0) + 40.f, pitchToY(64) + 1.f };
+    const juce::Point<float> dragged { start.x + 2.f * kPixelsPerBeat, start.y - 3.f * kRowHeight };
+
+    dragNote(editor, start, dragged, /*shiftAtRelease*/ true);
+
+    REQUIRE(editor.getNoteCount() == 4);
+
+    // The moved pair (still selected) at indices 0/1 - same math as the plain group-drag test above.
+    CHECK(*editor.getNoteStartBeat(0) == Catch::Approx(3.0));
+    CHECK(*editor.getNoteMidiPitch(0) == 67);
+    CHECK(*editor.getNoteStartBeat(1) == Catch::Approx(7.0));
+    CHECK(*editor.getNoteMidiPitch(1) == 58);
+
+    // The duplicates (unselected) at indices 2/3, at their original positions.
+    CHECK(*editor.getNoteStartBeat(2) == Catch::Approx(1.0));
+    CHECK(*editor.getNoteMidiPitch(2) == 64);
+    CHECK(*editor.getNoteStartBeat(3) == Catch::Approx(5.0));
+    CHECK(*editor.getNoteMidiPitch(3) == 55);
+}
+
+TEST_CASE("MidiEditor: onContentChanged fires exactly once for a shift-duplicate drag", "[MidiEditor][Duplicate]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 64);
+
+    RecordingListener listener;
+    editor.addListener(&listener);
+
+    const juce::Point<float> start { beatToX(1.0) + 40.f, pitchToY(64) + 1.f };
+    const juce::Point<float> dragged { start.x + 2.f * kPixelsPerBeat, start.y };
+
+    dragNote(editor, start, dragged, /*shiftAtRelease*/ true);
+
+    CHECK(listener.contentChangedCount == 1);
+    REQUIRE(editor.getNoteCount() == 2);
+
+    editor.removeListener(&listener);
+}
+
+TEST_CASE("MidiEditor: a shift-duplicated note's original position still contributes to the computed loop bounds", "[MidiEditor][Duplicate]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 8.0, 60);
+    REQUIRE(editor.getLoopEndBeat() == Catch::Approx(12.0));
+
+    // Drag the note back toward the start, with Shift held at release - the duplicate left behind
+    // at beat 8 must still be reflected in the loop's own end bound, not just the moved note's.
+    const juce::Point<float> start { beatToX(8.0) + 40.f, pitchToY(60) + 1.f };
+    const juce::Point<float> dragged { start.x - 7.5f * kPixelsPerBeat, start.y };
+
+    dragNote(editor, start, dragged, /*shiftAtRelease*/ true);
+
+    REQUIRE(editor.getNoteCount() == 2);
+    CHECK(editor.getLoopEndBeat() == Catch::Approx(12.0));
 }
 
 TEST_CASE("MidiEditor: clicking (no drag) one note out of an existing multi-selection collapses the selection to just that one", "[MidiEditor][MultiSelect]")
