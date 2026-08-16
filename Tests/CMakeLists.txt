@@ -25,6 +25,7 @@ add_executable(${PROJECT_NAME}_Tests
         MidiEditorTests.cpp
         SectionPanelChangeTests.cpp
         ProgressionTimelineTests.cpp
+        HistoryManagerTests.cpp
         main.cpp
 )
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 #include <unordered_map>
 
@@ -15,6 +16,7 @@
 #include "Component/SynthEditor.h"
 #include "Component/VoicingSelector.h"
 #include "Theory/Degree.h"
+#include "Theory/HistoryManager.h"
 
 class AppLayout final : public nlayout::AppLayout,
                          public nelement::SVGButton::OnClickListener,
@@ -36,6 +38,15 @@ public:
 
 private:
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
+
+    // Global undo/redo shortcuts (Cmd+Z / Cmd+Shift+Z on macOS, Ctrl+Z / Ctrl+Shift+Z everywhere
+    // else - juce::ModifierKeys::commandModifier already resolves to the right one per platform, no
+    // #if needed). JUCE walks a key press up from whatever component currently has focus through
+    // its parent chain until something returns true (see juce::ComponentPeer::handleKeyPress) - since
+    // AppLayout is an ancestor of every other component here, this fires regardless of which child
+    // was last interacted with, as long as that child's own keyPressed() doesn't already claim the
+    // same combination (nothing else in this app does).
+    bool keyPressed(const juce::KeyPress& key) override;
 
     void onKeyScaleChanged(theory::Key key, theory::Scale scale) override;
     void onChordChanged(theory::Degree degree, const theory::Chord& newChord) override;
@@ -88,7 +99,10 @@ private:
     void syncStateToValueTree();
 
     // Reads the "ChordsTheoryState" child back out (if present - absent on a fresh/never-saved
-    // instance) and applies it to the UI. Called once, at construction.
+    // instance) and applies it to the UI. Called once, at construction, and again by
+    // _historyManager's onStateRestored callback after every undo()/redo() (parameter-backed synth
+    // controls resync automatically via AudioProcessorValueTreeState::replaceState() - this call is
+    // what re-derives the non-parameter-backed half: key/scale/voicings/MIDI editor notes).
     void restoreStateFromValueTree();
 
     PluginAudioProcessor& _audioProcessor;
@@ -105,6 +119,13 @@ private:
 
     nelement::SVGButton _previousHistoryButton { "previous-history-button", nui::Icons::getArrowLeft() };
     nelement::SVGButton _nextHistoryButton { "next-history-button", nui::Icons::getArrowRight() };
+
+    // Constructed last in the constructor body (after every other setup call, including the extra
+    // syncStateToValueTree() that guarantees a baseline "ChordsTheoryState" child exists) so none
+    // of AppLayout's own setup-time UI pushes are mistaken for user edits worth a history entry. A
+    // unique_ptr rather than a plain member for exactly that reason - its construction needs to be
+    // deferred past the rest of the constructor body, not tied to member declaration order.
+    std::unique_ptr<theory::HistoryManager> _historyManager;
 
     nui::Section _mainSection;
 

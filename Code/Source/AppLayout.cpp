@@ -38,6 +38,9 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
 
     _dragOutButton.addListener(this);
 
+    _previousHistoryButton.addOnClickListener(this);
+    _nextHistoryButton.addOnClickListener(this);
+
     _voicingSelector.addListener(this);
     _voicingSelector.setDismissExemptComponent(&_chordBrowser);
 
@@ -127,6 +130,25 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     setVoicingVisibility(false);
 
     restoreStateFromValueTree();
+
+    // Guarantees a self-consistent "ChordsTheoryState" child always exists (reflecting whatever the
+    // UI ended up as above, whether DAW-loaded or freshly defaulted) before _historyManager takes
+    // its baseline snapshot below - without this, a never-saved instance has no such child until the
+    // first real edit, and undoing all the way back to the baseline would leave the chord UI
+    // un-reverted (restoreStateFromValueTree() silently no-ops when the child is missing).
+    syncStateToValueTree();
+
+    // Constructed last, after everything above has already stabilized, so none of AppLayout's own
+    // setup-time UI pushes are mistaken for user edits worth a history entry.
+    _historyManager = std::make_unique<theory::HistoryManager>(parameterManager,
+        [this] { restoreStateFromValueTree(); },
+        [this](bool canUndo, bool canRedo)
+        {
+            _previousHistoryButton.setEnabled(canUndo);
+            _nextHistoryButton.setEnabled(canRedo);
+        });
+    _previousHistoryButton.setEnabled(false);
+    _nextHistoryButton.setEnabled(false);
 }
 
 AppLayout::~AppLayout()
@@ -137,6 +159,8 @@ AppLayout::~AppLayout()
     _settings.removeListener(this);
     _synthPlayButton.removeListener(this);
     _dragOutButton.removeListener(this);
+    _previousHistoryButton.removeListener(this);
+    _nextHistoryButton.removeListener(this);
     _keyScaleSelector.removeListener(this);
     _chordBrowser.removeListener(this);
     _progressionEditor.removeListener(this);
@@ -188,7 +212,37 @@ void AppLayout::onButtonClick(const std::string& componentID)
             _progressionEditor.stopPlayback();
         else
             _progressionEditor.startPlayback();
+        return;
     }
+
+    if (componentID == _previousHistoryButton.getComponentID())
+    {
+        _historyManager->undo();
+        return;
+    }
+
+    if (componentID == _nextHistoryButton.getComponentID())
+    {
+        _historyManager->redo();
+        return;
+    }
+}
+
+bool AppLayout::keyPressed(const juce::KeyPress& key)
+{
+    if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier, 0))
+    {
+        _historyManager->undo();
+        return true;
+    }
+
+    if (key == juce::KeyPress('z', juce::ModifierKeys::commandModifier | juce::ModifierKeys::shiftModifier, 0))
+    {
+        _historyManager->redo();
+        return true;
+    }
+
+    return false;
 }
 
 void AppLayout::onDragStarted()
