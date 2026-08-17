@@ -86,3 +86,5 @@ CMake/local.cmake
 
 # Written by CMake/GitHubEnv.cmake for CI steps to read - not meant to be committed
 .env
+
+CLAUDE.md
