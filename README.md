@@ -11,6 +11,9 @@ across every plugin instance and DAW project on your machine.
 Built on [Nierika Plugin Template](https://github.com/halbehers/nierika_plugin_template). Available
 as Standalone, AU, AUv3, and VST3.
 
+<img width="1144" height="746" alt="Screenshot 2026-08-09 at 16 31 08" src="https://github.com/user-attachments/assets/aea58952-d873-44c7-bf23-07883e6439bd" />
+
+
 ## Features
 
 - **Key/Scale browser**: 12 keys × 10 scales (Major, Minor, Harmonic/Melodic Minor, the modes, and
