@@ -110,8 +110,10 @@ TEST_CASE("PluginAudioProcessor round-trips parameter state via getStateInformat
     // AudioProcessorValueTreeState only flushes parameter values into its internal state
     // ValueTree periodically (an internal 10Hz timer), not synchronously on
     // setValueNotifyingHost() - pump the message loop briefly so getStateInformation() below
-    // serializes the up-to-date value rather than a stale, not-yet-flushed one.
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(150);
+    // serializes the up-to-date value rather than a stale, not-yet-flushed one. 500ms (5x the
+    // ~100ms flush period) rather than a tighter margin - a slow/loaded CI runner can stretch a
+    // single dispatch-loop pump well past its nominal duration, and this only runs once.
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(500);
 
     juce::MemoryBlock state;
     source.getStateInformation(state);

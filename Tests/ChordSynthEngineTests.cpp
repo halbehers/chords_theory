@@ -74,8 +74,9 @@ TEST_CASE("ChordSynthEngine::previewChord auto-releases and falls silent after i
 
     // Let the ~1s preview timer fire and queue the auto-noteOff - it's a message-thread
     // juce::Timer, so it needs the dispatch loop actually pumped, same pattern as
-    // PluginProcessorTests.cpp's APVTS-async-flush test.
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(1100);
+    // PluginProcessorTests.cpp's APVTS-async-flush test. 500ms of margin (not just 100ms) - a
+    // slow/loaded CI runner can stretch a single dispatch-loop pump well past its nominal duration.
+    juce::MessageManager::getInstance()->runDispatchLoopUntil(1500);
 
     // Render enough further blocks to carry the release tail (~0.2s) all the way to silence.
     // midi must be cleared before every call - MidiKeyboardState::processNextMidiBuffer doesn't

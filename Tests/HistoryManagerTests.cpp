@@ -20,7 +20,6 @@ namespace
     // Comfortably shorter/longer than each other so timing-based assertions have real margin
     // without making the whole suite slow.
     constexpr int kTestDebounceMs = 30;
-    constexpr int kSettleMs = 150;
 
     // Mirrors exactly what AppLayout::syncStateToValueTree() does - remove+re-append the
     // "ChordsTheoryState" child - so HistoryManager's ValueTree::Listener sees the same shape of
@@ -34,6 +33,25 @@ namespace
         auto rootState = parameterState.state;
         rootState.removeChild(rootState.getChildWithName(SessionStateSerializer::kStateTag), nullptr);
         rootState.appendChild(SessionStateSerializer::toValueTree(state), nullptr);
+    }
+
+    // Repeatedly pumps the dispatch loop in short bursts, checking `predicate` after each, until
+    // it's true or maxWaitMs of *real* time elapses - a fixed "wait N ms then check once" (this
+    // file's original approach) has to guess a duration that's simultaneously "long enough for a
+    // slow/loaded CI runner" and "not annoyingly slow locally"; polling needs no such guess, since
+    // it returns the moment the condition is actually satisfied. The deadline is tracked via
+    // Time::getMillisecondCounter() rather than accumulating the requested poll step - each
+    // runDispatchLoopUntil() call can genuinely take longer than the duration it was asked for
+    // (message-queue/thread-sleep granularity is coarser than a few ms on some platforms), so
+    // counting nominal/requested time instead of real elapsed time let a very short poll step
+    // silently blow past maxWaitMs by 5-10x before this fix.
+    template <typename Predicate>
+    void waitUntil(Predicate&& predicate, int maxWaitMs = 2000)
+    {
+        constexpr int kPollStepMs = 25;
+        const auto deadline = juce::Time::getMillisecondCounter() + static_cast<juce::uint32>(maxWaitMs);
+        while (!predicate() && juce::Time::getMillisecondCounter() < deadline)
+            juce::MessageManager::getInstance()->runDispatchLoopUntil(kPollStepMs);
     }
 }
 
@@ -55,7 +73,7 @@ TEST_CASE("HistoryManager: a debounced edit becomes undoable", "[HistoryManager]
 
     CHECK_FALSE(history.canUndo()); // not yet debounced
 
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(kSettleMs);
+    waitUntil([&] { return history.canUndo(); });
 
     CHECK(history.canUndo());
     CHECK_FALSE(history.canRedo());
@@ -71,7 +89,7 @@ TEST_CASE("HistoryManager: undo restores the prior tree content, fires onStateRe
     const auto baseline = processor.getState().state.createCopy();
 
     writeSessionState(processor.getState(), Key::D);
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(kSettleMs);
+    waitUntil([&] { return history.canUndo(); });
     REQUIRE(history.canUndo());
 
     history.undo();
@@ -88,7 +106,7 @@ TEST_CASE("HistoryManager: redo restores the edited content again", "[HistoryMan
     HistoryManager history(processor, [] {}, [](bool, bool) {}, kTestDebounceMs);
 
     writeSessionState(processor.getState(), Key::D);
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(kSettleMs);
+    waitUntil([&] { return history.canUndo(); });
     REQUIRE(history.canUndo());
 
     const auto editedTree = processor.getState().state.createCopy();
@@ -106,19 +124,24 @@ TEST_CASE("HistoryManager: redo restores the edited content again", "[HistoryMan
 TEST_CASE("HistoryManager: a new edit after undo truncates the old redo branch", "[HistoryManager]")
 {
     PluginAudioProcessor processor;
-    HistoryManager history(processor, [] {}, [](bool, bool) {}, kTestDebounceMs);
+
+    // canUndo() alone can't tell "edit B's snapshot was pushed" apart from "still true from edit
+    // A" once more than one edit is involved - count pushes/restores via onHistoryChanged instead,
+    // so each wait below is tied to the specific edit it follows.
+    int historyChangedCount = 0;
+    HistoryManager history(processor, [] {}, [&historyChangedCount](bool, bool) { ++historyChangedCount; }, kTestDebounceMs);
 
     writeSessionState(processor.getState(), Key::D); // edit A
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(kSettleMs);
+    waitUntil([&] { return historyChangedCount >= 1; });
     const auto treeA = processor.getState().state.createCopy();
 
     writeSessionState(processor.getState(), Key::E); // edit B
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(kSettleMs);
+    waitUntil([&] { return historyChangedCount >= 2; });
 
     history.undo(); // back to A
 
     writeSessionState(processor.getState(), Key::F); // edit C - branches away from B
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(kSettleMs);
+    waitUntil([&] { return historyChangedCount >= 4; }); // +1 for the undo, +1 for edit C's own push
 
     CHECK_FALSE(history.canRedo()); // B was discarded, not just hidden
 
@@ -131,9 +154,9 @@ TEST_CASE("HistoryManager: rapid-fire edits within one debounce window coalesce 
     PluginAudioProcessor processor;
 
     // A much wider margin than the other tests use (and its own dedicated debounce, decoupled from
-    // kTestDebounceMs/kRapidFireStepMs) - five successive runDispatchLoopUntil() waits accumulate
-    // scheduling jitter, and this test's whole premise is that the timer must NOT fire between any
-    // two of them, so it needs more headroom than a single settle-and-check test does.
+    // kTestDebounceMs) - five successive runDispatchLoopUntil() waits accumulate scheduling
+    // jitter, and this test's whole premise is that the timer must NOT fire between any two of
+    // them, so it needs more headroom than a single settle-and-check test does.
     constexpr int kCoalesceDebounceMs = 300;
     constexpr int kCoalesceStepMs = 20;
     HistoryManager history(processor, [] {}, [](bool, bool) {}, kCoalesceDebounceMs);
@@ -141,12 +164,14 @@ TEST_CASE("HistoryManager: rapid-fire edits within one debounce window coalesce 
     for (auto key : { Key::D, Key::E, Key::F, Key::G, Key::A })
     {
         writeSessionState(processor.getState(), key);
-        // Deliberately much shorter than kCoalesceDebounceMs, so each edit restarts the timer
-        // instead of letting it fire - the whole burst should coalesce into one history entry.
+        // Deliberately much shorter than kCoalesceDebounceMs, and a plain fixed wait (not a poll -
+        // canUndo() is expected to stay false the whole loop, so polling on it would just degrade
+        // to this same fixed wait anyway), so each edit restarts the timer instead of letting it
+        // fire - the whole burst should coalesce into one history entry.
         juce::MessageManager::getInstance()->runDispatchLoopUntil(kCoalesceStepMs);
     }
 
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(kCoalesceDebounceMs + 100);
+    waitUntil([&] { return history.canUndo(); }, kCoalesceDebounceMs * 3);
     REQUIRE(history.canUndo());
 
     history.undo();
@@ -159,7 +184,7 @@ TEST_CASE("HistoryManager: undo/redo flush a pending debounced edit instead of l
     HistoryManager history(processor, [] {}, [](bool, bool) {}, kTestDebounceMs);
 
     writeSessionState(processor.getState(), Key::D); // edit A - let it settle
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(kSettleMs);
+    waitUntil([&] { return history.canUndo(); });
     REQUIRE(history.canUndo());
     const auto treeA = processor.getState().state.createCopy();
 
@@ -179,12 +204,19 @@ TEST_CASE("HistoryManager: exceeding the depth cap evicts the oldest entry", "[H
 {
     PluginAudioProcessor processor;
     constexpr int kMaxDepth = 3;
-    HistoryManager history(processor, [] {}, [](bool, bool) {}, kTestDebounceMs, kMaxDepth);
 
+    // Same reasoning as the "truncates the old redo branch" test above - canUndo() can't
+    // distinguish "this edit's own push happened" from "still true from an earlier one" once
+    // there's more than one edit in the sequence.
+    int historyChangedCount = 0;
+    HistoryManager history(processor, [] {}, [&historyChangedCount](bool, bool) { ++historyChangedCount; }, kTestDebounceMs, kMaxDepth);
+
+    int expectedHistoryChangedCount = 0;
     for (auto key : { Key::D, Key::E, Key::F, Key::G })
     {
         writeSessionState(processor.getState(), key);
-        juce::MessageManager::getInstance()->runDispatchLoopUntil(kSettleMs);
+        ++expectedHistoryChangedCount;
+        waitUntil([&] { return historyChangedCount >= expectedHistoryChangedCount; });
     }
 
     int undoCount = 0;
@@ -207,9 +239,11 @@ TEST_CASE("HistoryManager: undo reverts a real synth parameter value", "[History
 
     releaseParameter->setValueNotifyingHost(releaseParameter->convertTo0to1(999.0f)); // default is 200
 
-    // Clears both AudioProcessorValueTreeState's own internal flush timer (which is what actually
-    // writes the new value into the tree HistoryManager watches) and HistoryManager's own debounce.
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(400);
+    // Waits out both AudioProcessorValueTreeState's own internal flush timer (which is what
+    // actually writes the new value into the tree HistoryManager watches) and HistoryManager's own
+    // debounce - polling on canUndo() means this doesn't need to reason about their combined
+    // worst-case duration up front.
+    waitUntil([&] { return history.canUndo(); });
     REQUIRE(history.canUndo());
 
     history.undo();
@@ -229,7 +263,7 @@ TEST_CASE("HistoryManager: onHistoryChanged reports the correct canUndo/canRedo 
         kTestDebounceMs);
 
     writeSessionState(processor.getState(), Key::D);
-    juce::MessageManager::getInstance()->runDispatchLoopUntil(kSettleMs);
+    waitUntil([&] { return !transitions.empty(); });
 
     history.undo();
     history.redo();
