@@ -48,7 +48,7 @@ SynthMixerSection::SynthMixerSection(const std::string& identifier, ndsp::Parame
     {
         valueSetter->setValueBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);
         valueSetter->setDisplayMode(nelement::ValueSetter::DisplayMode::Inline);
-        valueSetter->setGap(8.f);
+        valueSetter->setGap(8);
         valueSetter->setValueBackgroundWidth(70.f);
         valueSetter->setValueBackgroundHorizontalAlignment(nui::Component::START);
         valueSetter->setValueBackgroundHeight(24.f);
