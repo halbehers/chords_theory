@@ -41,6 +41,9 @@ AppLayout::AppLayout(ndsp::ParameterManager& parameterManager, PluginAudioProces
     _previousHistoryButton.addOnClickListener(this);
     _nextHistoryButton.addOnClickListener(this);
 
+    _previousHistoryButton.setIconSize(16.f);
+    _nextHistoryButton.setIconSize(16.f);
+
     _voicingSelector.addListener(this);
     _voicingSelector.setDismissExemptComponent(&_chordBrowser);
 

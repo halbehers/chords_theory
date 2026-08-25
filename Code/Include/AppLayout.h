@@ -117,8 +117,8 @@ private:
     component::DragOutButton _dragOutButton { "drag-out-button" };
     component::SynthEditor _synthEditor;
 
-    nelement::SVGButton _previousHistoryButton { "previous-history-button", nui::Icons::getArrowLeft() };
-    nelement::SVGButton _nextHistoryButton { "next-history-button", nui::Icons::getArrowRight() };
+    nelement::SVGButton _previousHistoryButton { "previous-history-button", nui::Icons::getPrevious() };
+    nelement::SVGButton _nextHistoryButton { "next-history-button", nui::Icons::getNext() };
 
     // Constructed last in the constructor body (after every other setup call, including the extra
     // syncStateToValueTree() that guarantees a baseline "ChordsTheoryState" child exists) so none
