@@ -17,7 +17,7 @@ public:
 
 private:
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
-    void onSelectionChanged(const std::string& componentID, int selectedId) override;
+    void onSelectionChanged(const std::string& selectorID, int selectedId) override;
 
     enum class ControlAlignment { Left, Right };
     static constexpr ControlAlignment CONTROL_ALIGNMENT = ControlAlignment::Left;

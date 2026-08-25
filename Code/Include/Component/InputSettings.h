@@ -22,7 +22,7 @@ public:
     void resized() override;
 
 private:
-    void onSelectionChanged(const std::string& componentID, int selectedId) override;
+    void onSelectionChanged(const std::string& selectorID, int selectedId) override;
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     // Re-populates _midiInputComboBox from juce::MidiInput::getAvailableDevices() (devices can be

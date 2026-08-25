@@ -41,7 +41,7 @@ public:
     void resetTickedColour() { _picker.resetTickedColour(); }
 
 private:
-    void onSelectionChanged(const std::string& componentID, int selectedId) override;
+    void onSelectionChanged(const std::string& selectorID, int selectedId) override;
 
     nelement::ComboBox _picker { "progression-preset-picker" };
     std::vector<theory::ProgressionPreset> _visiblePresets; // combobox item id (1-based) == index + 1

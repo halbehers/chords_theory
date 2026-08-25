@@ -161,9 +161,9 @@ bool SettingsWindow::keyPressed(const juce::KeyPress& key)
     return Window::keyPressed(key);
 }
 
-void SettingsWindow::onButtonClick(const std::string& componentID)
+void SettingsWindow::onButtonClick(const std::string& buttonID)
 {
-    if (componentID == _closeButton.getComponentID())
+    if (buttonID == _closeButton.getComponentID())
         close();
 }
 

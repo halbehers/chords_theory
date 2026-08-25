@@ -15,7 +15,7 @@ public:
     SynthMixerSection(const std::string& identifier, ndsp::ParameterManager& parameterManager);
     ~SynthMixerSection() override;
 
-    void onSelectionChanged(const std::string& componentID, int selectedIndex) override;
+    void onSelectionChanged(const std::string& selectorID, int selectedIndex) override;
 
 protected:
     std::string getSectionName() override;

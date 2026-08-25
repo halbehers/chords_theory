@@ -198,15 +198,15 @@ void AppLayout::resized()
     updateVoicingSelectorArrow();
 }
 
-void AppLayout::onButtonClick(const std::string& componentID)
+void AppLayout::onButtonClick(const std::string& buttonID)
 {
-    if (componentID == _settings.getComponentID())
+    if (buttonID == _settings.getComponentID())
     {
         _windowsManager.showWindow("settings");
         return;
     }
 
-    if (componentID == _synthPlayButton.getComponentID())
+    if (buttonID == _synthPlayButton.getComponentID())
     {
         if (_progressionEditor.isPlaying())
             _progressionEditor.stopPlayback();
@@ -215,13 +215,13 @@ void AppLayout::onButtonClick(const std::string& componentID)
         return;
     }
 
-    if (componentID == _previousHistoryButton.getComponentID())
+    if (buttonID == _previousHistoryButton.getComponentID())
     {
         _historyManager->undo();
         return;
     }
 
-    if (componentID == _nextHistoryButton.getComponentID())
+    if (buttonID == _nextHistoryButton.getComponentID())
     {
         _historyManager->redo();
         return;

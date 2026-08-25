@@ -53,16 +53,16 @@ void SavePresetPrompt::resized()
     _layout.resized();
 }
 
-void SavePresetPrompt::onReturnKeyPressed(const std::string& componentID, const std::string& newValue)
+void SavePresetPrompt::onReturnKeyPressed(const std::string& textEditorID, const std::string& newValue)
 {
-    juce::ignoreUnused(componentID, newValue);
+    juce::ignoreUnused(textEditorID, newValue);
 
     confirm();
 }
 
-void SavePresetPrompt::onButtonClick(const std::string& componentID)
+void SavePresetPrompt::onButtonClick(const std::string& buttonID)
 {
-    juce::ignoreUnused(componentID);
+    juce::ignoreUnused(buttonID);
 
     confirm();
 }

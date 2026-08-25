@@ -105,9 +105,9 @@ void LanguageSettings::changeListenerCallback(juce::ChangeBroadcaster* source)
     repaint();
 }
 
-void LanguageSettings::onSelectionChanged(const std::string& componentID, int selectedId)
+void LanguageSettings::onSelectionChanged(const std::string& selectorID, int selectedId)
 {
-    (void) componentID;
+    (void) selectorID;
 
     const auto& options = getLanguageOptions();
     const auto selectedOption = std::find_if(options.begin(), options.end(),

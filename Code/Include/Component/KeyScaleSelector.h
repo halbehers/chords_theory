@@ -37,7 +37,7 @@ public:
     void removeListener(Listener* listener);
 
 private:
-    void onSelectionChanged(const std::string& componentID, int selectedId) override;
+    void onSelectionChanged(const std::string& selectorID, int selectedId) override;
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
     void notifyListeners();
 

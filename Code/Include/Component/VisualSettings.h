@@ -16,7 +16,7 @@ public:
     void resized() override;
 
 private:
-    void onSelectionChanged(const std::string& componentID, int selectedIndex) override;
+    void onSelectionChanged(const std::string& selectorID, int selectedIndex) override;
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     nelement::Text _title { "visual-settings-title", "", juce::translate("visual_settings_title").toStdString() };

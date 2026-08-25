@@ -204,9 +204,9 @@ void ProgressionEditor::onDragStarted()
         listener->onProgressionDragStarted();
 }
 
-void ProgressionEditor::onButtonClick(const std::string& componentID)
+void ProgressionEditor::onButtonClick(const std::string& buttonID)
 {
-    if (componentID == _playButton.getComponentID())
+    if (buttonID == _playButton.getComponentID())
     {
         if (_midiEditor.isPlaying())
             _midiEditor.stopPlayback();
@@ -215,7 +215,7 @@ void ProgressionEditor::onButtonClick(const std::string& componentID)
         return;
     }
 
-    if (componentID != _savePresetButton.getComponentID())
+    if (buttonID != _savePresetButton.getComponentID())
         return;
 
     const auto populatedSlots = getPopulatedSlots();

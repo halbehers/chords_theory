@@ -56,9 +56,9 @@ void VisualSettings::resized()
     _layout.resized();
 }
 
-void VisualSettings::onSelectionChanged(const std::string& componentID, int selectedIndex)
+void VisualSettings::onSelectionChanged(const std::string& selectorID, int selectedIndex)
 {
-    if (componentID != _themeSwitch.getComponentID())
+    if (selectorID != _themeSwitch.getComponentID())
         return;
 
     const auto mode = selectedIndex == 1 ? nui::Theme::Mode::LIGHT : nui::Theme::Mode::DARK;

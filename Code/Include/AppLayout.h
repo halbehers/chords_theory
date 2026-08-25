@@ -34,7 +34,7 @@ public:
 
     void resized() override;
 
-    void onButtonClick(const std::string& componentID) override;
+    void onButtonClick(const std::string& buttonID) override;
 
 private:
     void changeListenerCallback(juce::ChangeBroadcaster* source) override;

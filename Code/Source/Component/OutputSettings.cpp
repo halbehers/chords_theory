@@ -115,9 +115,9 @@ float OutputSettings::getControlX(const juce::Rectangle<float>& cell, float cont
     return CONTROL_ALIGNMENT == ControlAlignment::Right ? cell.getRight() - controlWidth : cell.getX();
 }
 
-void OutputSettings::onSelectionChanged(const std::string& componentID, int selectedIndex)
+void OutputSettings::onSelectionChanged(const std::string& selectorID, int selectedIndex)
 {
-    if (componentID == _trimSwitch.getComponentID())
+    if (selectorID == _trimSwitch.getComponentID())
     {
         const auto db = TRIM_VALUES_DB[selectedIndex];
         AppSettings::getInstance().setOutputTrimDb(db);
@@ -128,21 +128,21 @@ void OutputSettings::onSelectionChanged(const std::string& componentID, int sele
     if (_deviceManager == nullptr)
         return;
 
-    if (componentID == _sampleRateComboBox.getComponentID())
+    if (selectorID == _sampleRateComboBox.getComponentID())
     {
         auto setup = _deviceManager->getAudioDeviceSetup();
         setup.sampleRate = _sampleRateComboBox.getSelectedSampleRate();
         _deviceManager->setAudioDeviceSetup(setup, true);
         syncDeviceComboBoxesFromCurrentState();
     }
-    else if (componentID == _bufferSizeComboBox.getComponentID())
+    else if (selectorID == _bufferSizeComboBox.getComponentID())
     {
         auto setup = _deviceManager->getAudioDeviceSetup();
         setup.bufferSize = _bufferSizeComboBox.getSelectedBufferSize();
         _deviceManager->setAudioDeviceSetup(setup, true);
         syncDeviceComboBoxesFromCurrentState();
     }
-    else if (componentID == _devicesComboBox.getComboBox().getComponentID())
+    else if (selectorID == _devicesComboBox.getComboBox().getComponentID())
     {
         const auto& device = _devicesComboBox.getComboBox().getSelectedDevice();
 

@@ -172,16 +172,16 @@ void VoicingSelector::removeListener(Listener* listener)
     _listeners.erase(std::remove(_listeners.begin(), _listeners.end(), listener), _listeners.end());
 }
 
-void VoicingSelector::onButtonClick(const std::string& componentID)
+void VoicingSelector::onButtonClick(const std::string& buttonID)
 {
-    if (componentID == _closeButton.getComponentID())
+    if (buttonID == _closeButton.getComponentID())
     {
         close();
         return;
     }
 
     const auto it = std::find_if(_voicings.begin(), _voicings.end(),
-        [&componentID](const theory::Chord& chord) { return chord.symbol == componentID; });
+        [&buttonID](const theory::Chord& chord) { return chord.symbol == buttonID; });
 
     if (it == _voicings.end())
         return;

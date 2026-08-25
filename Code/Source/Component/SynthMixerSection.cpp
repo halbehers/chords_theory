@@ -106,9 +106,9 @@ SynthMixerSection::~SynthMixerSection()
     AppLocalisation::getChangeBroadcaster().removeChangeListener(this);
 }
 
-void SynthMixerSection::onSelectionChanged(const std::string& componentID, int selectedIndex)
+void SynthMixerSection::onSelectionChanged(const std::string& selectorID, int selectedIndex)
 {
-    if (componentID != _algorithmCycler.getID())
+    if (selectorID != _algorithmCycler.getID())
         return;
 
     updateAlgorithmParameterVisibility(selectedIndex);

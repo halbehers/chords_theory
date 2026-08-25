@@ -25,7 +25,7 @@ public:
     void mouseUp(const juce::MouseEvent& event) override;
     bool keyPressed(const juce::KeyPress& key) override;
 
-    void onButtonClick(const std::string& componentID) override;
+    void onButtonClick(const std::string& buttonID) override;
 
 private:
     void close();

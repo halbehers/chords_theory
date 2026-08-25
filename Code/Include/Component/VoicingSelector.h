@@ -82,7 +82,7 @@ private:
         VoicingSelector& _owner;
     };
 
-    void onButtonClick(const std::string& componentID) override;
+    void onButtonClick(const std::string& buttonID) override;
     void refreshSelectedStates();
     void layoutVoicingRow();
 

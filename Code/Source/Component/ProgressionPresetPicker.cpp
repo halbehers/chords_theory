@@ -83,9 +83,9 @@ void ProgressionPresetPicker::removeListener(Listener* listener)
     _listeners.erase(std::remove(_listeners.begin(), _listeners.end(), listener), _listeners.end());
 }
 
-void ProgressionPresetPicker::onSelectionChanged(const std::string& componentID, int selectedId)
+void ProgressionPresetPicker::onSelectionChanged(const std::string& selectorID, int selectedId)
 {
-    juce::ignoreUnused(componentID);
+    juce::ignoreUnused(selectorID);
 
     const auto index = selectedId - 1;
     if (index < 0 || index >= static_cast<int>(_visiblePresets.size()))

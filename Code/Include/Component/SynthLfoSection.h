@@ -20,7 +20,7 @@ protected:
     void refreshLabels() override;
 
 private:
-    void onToggleValueChanged(const std::string& componentID, bool isOn) override;
+    void onToggleValueChanged(const std::string& toggleID, bool isOn) override;
 
     nelement::Cycler _shapeCycler;
     nelement::LFOCurve _lfoCurve;

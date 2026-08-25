@@ -85,9 +85,9 @@ void KeyScaleSelector::removeListener(Listener* listener)
     _listeners.erase(std::remove(_listeners.begin(), _listeners.end(), listener), _listeners.end());
 }
 
-void KeyScaleSelector::onSelectionChanged(const std::string& componentID, int selectedId)
+void KeyScaleSelector::onSelectionChanged(const std::string& selectorID, int selectedId)
 {
-    juce::ignoreUnused(componentID, selectedId);
+    juce::ignoreUnused(selectorID, selectedId);
 
     _currentKey = static_cast<theory::Key>(_keyPicker.getSelectedId() - 1);
     _currentScale = static_cast<theory::Scale>(_scalePicker.getSelectedId() - 1);

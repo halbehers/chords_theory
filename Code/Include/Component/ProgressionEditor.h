@@ -130,7 +130,7 @@ private:
     void onChordBlockDragStarted(int chordBlockIndex) override;
     void onPresetSelected(const theory::ProgressionPreset& preset) override;
     void onDragStarted() override; // DragOutButton::Listener - bubbles to _listeners' onProgressionDragStarted
-    void onButtonClick(const std::string& componentID) override;
+    void onButtonClick(const std::string& buttonID) override;
 
     ChordResolver _chordResolver;
     theory::Key _currentKey = theory::Key::C;

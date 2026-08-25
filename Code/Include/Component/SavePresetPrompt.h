@@ -25,8 +25,8 @@ public:
     static void show(juce::Rectangle<int> areaToPointTo, juce::Component* parentComponent, std::function<void(const std::string&)> onSave);
 
 private:
-    void onReturnKeyPressed(const std::string& componentID, const std::string& newValue) override;
-    void onButtonClick(const std::string& componentID) override;
+    void onReturnKeyPressed(const std::string& textEditorID, const std::string& newValue) override;
+    void onButtonClick(const std::string& buttonID) override;
 
     void confirm();
 

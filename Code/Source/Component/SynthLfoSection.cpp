@@ -99,11 +99,11 @@ std::string SynthLfoSection::getSectionName()
     return juce::translate("synth_lfo_section_title").toStdString();
 }
 
-void SynthLfoSection::onToggleValueChanged(const std::string& componentID, bool isOn)
+void SynthLfoSection::onToggleValueChanged(const std::string& toggleID, bool isOn)
 {
-    Section::onToggleValueChanged(componentID, isOn);
+    Section::onToggleValueChanged(toggleID, isOn);
 
-    if (componentID != _syncToggle.getID())
+    if (toggleID != _syncToggle.getID())
         return;
 
     _syncDivisionDial.setVisible(isOn);

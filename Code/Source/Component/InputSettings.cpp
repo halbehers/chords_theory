@@ -105,9 +105,9 @@ void InputSettings::syncFromCurrentState()
     _midiInputComboBox.setSelectedId(kNoMidiInputId, juce::dontSendNotification);
 }
 
-void InputSettings::onSelectionChanged(const std::string& componentID, int selectedId)
+void InputSettings::onSelectionChanged(const std::string& selectorID, int selectedId)
 {
-    if (_deviceManager == nullptr || componentID != _midiInputComboBox.getComponentID())
+    if (_deviceManager == nullptr || selectorID != _midiInputComboBox.getComponentID())
         return;
 
     // Single-selection by design (mirrors the audio Devices combo box's UX) - picking a new MIDI
