@@ -55,7 +55,7 @@ optional and independent of the drag-to-DAW MIDI workflow:
 - **6-stage envelope** (delay/attack/hold/decay/sustain/release), a **filter** (low/high/band-pass,
   12 or 24 dB/octave, resonance, drive, key tracking), and an **LFO** (4 shapes, tempo-synced or free
   rate, trigger-per-note or free-running, smoothing).
-- **Output section**: tuning reference (A4 Hz), pan, master compressor, and level trim.
+- **Output section**: tuning reference (Wanna make music in A 432Hz? you can!), pan, master compressor, and level trim.
 - A live "what's playing right now" mini timeline sits in the Synth tab's header so the current
   chord — draggable out on its own — stays visible without switching back to the Chords tab.
 
@@ -77,6 +77,9 @@ optional and independent of the drag-to-DAW MIDI workflow:
 ## Requirements
 
 - macOS ≥ 14.5 or Windows ≥ 10 (2020)
+
+### Additional development requirements
+
 - CMake ≥ 3.22, [Ninja](https://ninja-build.org/)
 - A C++20 compiler (Xcode command line tools)
 
