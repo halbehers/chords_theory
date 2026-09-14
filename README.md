@@ -4,14 +4,13 @@
 **Chords Theory** is a JUCE synth plugin that turns music theory into both sound and draggable MIDI:
 pick a key and a scale, browse the diatonic chords for every scale degree (most popular voicing shown
 by default — click a card to pick a different one), and preview or drag them straight into a DAW. A
-full piano-roll MIDI editor builds a chord progression bar by bar — drop chords in, move/resize/
+full piano-roll MIDI editor helps you build a chord progression bar by bar — drop chords in, move/resize/
 duplicate notes by hand, loop a region, and drag the whole progression (or any single chord within
 it) out as a MIDI clip. A built-in dual-oscillator synth with its own filter/envelope/LFO/mixer
 section lets you preview everything through actual sound rather than silent drag-and-drop. Undo/redo
 covers every one of these surfaces at once.
 
-Built on [Nierika Plugin Template](https://github.com/halbehers/nierika_plugin_template). Available
-as Standalone, AU, AUv3, and VST3.
+Available as Standalone, AU, AUv3, and VST3.
 
 <table>
   
