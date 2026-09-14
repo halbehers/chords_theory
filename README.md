@@ -14,9 +14,14 @@ Built on [Nierika Plugin Template](https://github.com/halbehers/nierika_plugin_t
 as Standalone, AU, AUv3, and VST3.
 
 <table>
+  
   <tr>
     <td><img width="1252" height="822" alt="Screenshot 2026-09-14 at 14 50 08" src="https://github.com/user-attachments/assets/902dd7d9-3c27-4813-90f8-9929078c503a" /></td>
     <td><img width="1252" height="823" alt="Screenshot 2026-09-14 at 14 47 21" src="https://github.com/user-attachments/assets/f051868f-0184-4937-98a7-b2e20314a109" /></td>
+  </tr>
+  <tr>
+    <td><b>Chords crafting</b></td>
+    <td><b>Synth tweeking</b></td>
   </tr>
 </table>
 
