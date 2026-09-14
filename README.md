@@ -1,3 +1,4 @@
+
 # Chords Theory
 
 **Chords Theory** is a JUCE synth plugin that turns music theory into both sound and draggable MIDI:
@@ -12,7 +13,12 @@ covers every one of these surfaces at once.
 Built on [Nierika Plugin Template](https://github.com/halbehers/nierika_plugin_template). Available
 as Standalone, AU, AUv3, and VST3.
 
-<img width="1144" height="746" alt="Screenshot 2026-08-09 at 16 31 08" src="https://github.com/user-attachments/assets/aea58952-d873-44c7-bf23-07883e6439bd" />
+<table>
+  <tr>
+    <td><img width="1252" height="822" alt="Screenshot 2026-09-14 at 14 50 08" src="https://github.com/user-attachments/assets/902dd7d9-3c27-4813-90f8-9929078c503a" /></td>
+    <td><img width="1252" height="823" alt="Screenshot 2026-09-14 at 14 47 21" src="https://github.com/user-attachments/assets/f051868f-0184-4937-98a7-b2e20314a109" /></td>
+  </tr>
+</table>
 
 
 ## Features
