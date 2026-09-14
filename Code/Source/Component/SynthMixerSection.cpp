@@ -44,6 +44,10 @@ SynthMixerSection::SynthMixerSection(const std::string& identifier, ndsp::Parame
     _osc1LevelSlider.setThumbBorderRadius(4.f);
     _osc2LevelSlider.setThumbBorderRadius(4.f);
 
+    _subLevelSlider.setNumDecimalPlacesToDisplay(1);
+    _osc1LevelSlider.setNumDecimalPlacesToDisplay(1);
+    _osc2LevelSlider.setNumDecimalPlacesToDisplay(1);
+
     for (auto* valueSetter : { &_fmAmountSetter, &_ringModMixSetter, &_amDepthSetter, &_serialFoldAmountSetter })
     {
         valueSetter->setValueBackgroundColour(nui::Theme::ThemeColor::BACKGROUND);

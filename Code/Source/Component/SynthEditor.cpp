@@ -31,7 +31,7 @@ SynthEditor::SynthEditor(ndsp::ParameterManager& parameterManager,
     _layout.setMargin(32.f, 0.f, 32.f, 16.f);
 
     _layout.setDisplayGrid(false);
-    _layout.init({ 3, 2 }, { 4, 6, 2, 2, 6, 4, 6, 6 });
+    _layout.init({ 3, 2 }, { 4, 6, 2, 2, 6, 4, 6, 5 });
 
     _layout.addComponent(_subSection, 0, 0, 1, 1);
     _layout.addComponent(_oscillator1Section, 0, 1, 3, 1);
