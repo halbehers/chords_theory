@@ -20,6 +20,24 @@ Available as Standalone, AU, AUv3, and VST3.
   </tr>
 </table>
 
+## Table of Contents
+
+- [Features](#features)
+  - [Chords & progressions](#chords--progressions)
+  - [Synth](#synth)
+  - [History](#history)
+  - [Everything else](#everything-else)
+- [Requirements](#requirements)
+- [How to install?](#how-to-install)
+  - [Installing an older version](#installing-an-older-version)
+- [Development](#development)
+  - [Requirements](#requirements-1)
+  - [Building](#building)
+    - [Installers](#installers)
+  - [Testing](#testing)
+  - [Continuous integration](#continuous-integration)
+  - [Project layout](#project-layout)
+  - [Developers](#developers)
 
 ## Features
 
