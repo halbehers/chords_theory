@@ -135,7 +135,7 @@ Manual verification (not automatable): drag-and-drop into an actual DAW track, a
 
 ### Continuous integration
 
-`.github/workflows/build_and_test.yml` (inherited unchanged from the template — it's identity-agnostic) builds a macOS + Windows matrix on every push/PR, runs `ctest`, uploads installers as workflow artifacts, and publishes a GitHub pre-release on any `v*` tag.
+`.github/workflows/build_and_test.yml` builds a macOS + Windows matrix on every push/PR, runs `ctest`, uploads installers as workflow artifacts, and publishes a GitHub pre-release on any `v*` tag.
 
 ### Project layout
 
