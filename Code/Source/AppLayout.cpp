@@ -303,7 +303,16 @@ void AppLayout::onVoicingSelectorRequested(theory::Degree degree, const std::vec
     _voicingSelector.show(availableVoicings, currentSymbol,
         [this, degree](const theory::Chord& chosen)
         {
+            // Captured before selectVoicing() overwrites it - needed to find any already-placed
+            // MIDI editor content that used this degree's previous voicing.
+            const auto* oldChord = _chordBrowser.getCurrentChord(degree);
+            const auto oldChordCopy = oldChord != nullptr ? *oldChord : theory::Chord {};
+
             _chordBrowser.selectVoicing(degree, chosen);
+
+            if (oldChord != nullptr && oldChordCopy.popularityOrder != chosen.popularityOrder)
+                _progressionEditor.updateChordBlocksForVoicingChange(degree, oldChordCopy, chosen);
+
             previewChord(chosen);
         });
 

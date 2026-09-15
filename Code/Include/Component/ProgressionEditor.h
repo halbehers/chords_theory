@@ -12,6 +12,7 @@
 #include "Component/MidiEditor.h"
 #include "Component/ProgressionPresetPicker.h"
 #include "Theory/Chord.h"
+#include "Theory/Degree.h"
 #include "Theory/Key.h"
 #include "Theory/MidiEditorState.h"
 #include "Theory/ProgressionPreset.h"
@@ -93,6 +94,11 @@ public:
     // a chord-file drop's Degree to a Chord itself, then hands it here; this class never reaches
     // past its own MidiEditor member, and AppLayout never reaches past this class.
     void addChordAtBeat(double startBeat, const theory::Chord& chord);
+
+    // Thin forward to the owned MidiEditor's own updateChordBlocksForVoicingChange() - called when
+    // the user picks a different voicing for a degree, so any already-placed content using that
+    // degree's previous voicing gets updated to the new one instead of silently going stale.
+    void updateChordBlocksForVoicingChange(theory::Degree degree, const theory::Chord& oldChord, const theory::Chord& newChord);
 
     // Pure-data snapshot of the MidiEditor's content, and the inverse - used by AppLayout to
     // persist/restore DAW-project session state without reaching past this class into MidiEditor

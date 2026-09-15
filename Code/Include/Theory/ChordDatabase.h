@@ -4,6 +4,7 @@
 
 #include "Theory/Key.h"
 #include "Theory/KeyScaleData.h"
+#include "Theory/ProgressionSlot.h"
 #include "Theory/Scale.h"
 
 namespace theory
@@ -18,6 +19,14 @@ public:
     static const ChordDatabase& getInstance();
 
     [[nodiscard]] const KeyScaleData& get(Key key, Scale scale) const;
+
+    // Resolves a key/scale-independent ProgressionSlot (degree + popularityOrder) back to the
+    // concrete Chord it names under this specific key/scale - nullptr if that degree doesn't exist
+    // for this scale (e.g. II/III/VI/VII on Minor Blues) or no chord at that degree has a matching
+    // popularityOrder (voicing counts can differ between scales at the same degree). Stateless
+    // Theory-layer counterpart to ChordDegreeBrowser::resolveSlot, minus its UI-specific fallback to
+    // whatever's currently live on screen.
+    [[nodiscard]] const Chord* resolveChord(Key key, Scale scale, const ProgressionSlot& slot) const;
 
 private:
     ChordDatabase();

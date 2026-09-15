@@ -8,6 +8,8 @@
 
 #include "Audio/ProgressionPlayer.h"
 #include "Theory/Chord.h"
+#include "Theory/Degree.h"
+#include "Theory/DetectedChord.h"
 #include "Theory/Key.h"
 #include "Theory/MidiEditorState.h"
 #include "Theory/ProgressionSlot.h"
@@ -96,8 +98,9 @@ public:
     void clear();
 
     // The Key/Scale the chord lane detects against (see ChordBlockData/recomputeChordBlocksFromNotes
-    // below) - defaults to Key::C/Scale::Major. Setting it re-labels the lane immediately against
-    // whatever notes are already present, without otherwise touching note content.
+    // below) - defaults to Key::C/Scale::Major. Also transposes existing note content to the new
+    // key/scale first (see transposeNotesToKeyAndScale in the .cpp), so the lane's re-label reflects
+    // notes that actually make sense in the new key/scale rather than stale pitches from the old one.
     void setKeyAndScale(theory::Key key, theory::Scale scale);
 
     [[nodiscard]] int getNoteCount() const { return static_cast<int>(_notes.size()); }
@@ -109,6 +112,13 @@ public:
     [[nodiscard]] std::optional<double> getChordBlockLengthBeats(int index) const;
     [[nodiscard]] std::optional<theory::ProgressionSlot> getChordBlockSlot(int index) const;
     [[nodiscard]] std::optional<std::string> getChordBlockLabel(int index) const;
+
+    // Replaces every existing chord block currently matching (degree, oldChord.popularityOrder)
+    // with newChord's voicing, at the same startBeat/lengthBeats - called when the user picks a
+    // different voicing for a degree that's already placed somewhere in the piano roll, so that
+    // content doesn't silently keep using the voicing that's no longer selected. A no-op if no
+    // block currently matches. See the .cpp for how register is preserved across the swap.
+    void updateChordBlocksForVoicingChange(theory::Degree degree, const theory::Chord& oldChord, const theory::Chord& newChord);
 
     // Pure-data snapshot of the current notes/chord-blocks, and the inverse - used to bridge into
     // Theory::SessionState (DAW project persistence) and Theory::MidiExporter (exact-content drag
@@ -245,6 +255,20 @@ private:
     // notifyContentChanged() (covers every add/move/resize/delete), restoreState() (which
     // deliberately doesn't call notifyContentChanged), and setKeyAndScale().
     void recomputeChordBlocksFromNotes();
+
+    // recomputeChordBlocksFromNotes()'s Phase 1/Phase 2, factored out so transposeNotesToKeyAndScale
+    // can reuse the exact same grouping/identification the chord lane itself uses - a note group
+    // that gets transposed as "chord X" must be the same group the lane detects as "chord X", or
+    // the two would drift apart.
+    [[nodiscard]] std::vector<std::vector<int>> buildOnsetClusters() const;
+    [[nodiscard]] std::optional<theory::DetectedChord> identifyCluster(
+        const std::vector<std::vector<int>>& clusters, std::size_t clusterIndex, theory::Key key, theory::Scale scale) const;
+
+    // Called from setKeyAndScale before the members below are updated - oldKey/oldScale/newKey/
+    // newScale are all explicit parameters rather than reading _currentKey/_currentScale directly,
+    // since the caller hasn't updated them yet at the point this runs. See the .cpp for the full
+    // key-only-shift vs. scale-change-remap split.
+    void transposeNotesToKeyAndScale(theory::Key oldKey, theory::Scale oldScale, theory::Key newKey, theory::Scale newScale);
 
     // Recomputes _loopStartBeat/_loopEndBeat from the current note content (a no-op if
     // _loopManuallyAdjusted or there are no notes) - called from notifyContentChanged.

@@ -4,14 +4,7 @@
 [![Latest stable release](https://img.shields.io/github/v/release/halbehers/chords_theory?label=latest%20stable%20release)](https://github.com/halbehers/chords_theory/releases)
 [![Latest alpha release](https://img.shields.io/github/v/release/halbehers/chords_theory?include_prereleases&label=latest%20alpha%20release)](https://github.com/halbehers/chords_theory/releases)
 
-**Chords Theory** is a JUCE synth plugin that turns music theory into both sound and draggable MIDI:
-pick a key and a scale, browse the diatonic chords for every scale degree (most popular voicing shown
-by default — click a card to pick a different one), and preview or drag them straight into a DAW. A
-full piano-roll MIDI editor helps you build a chord progression bar by bar — drop chords in, move/resize/
-duplicate notes by hand, loop a region, and drag the whole progression (or any single chord within
-it) out as a MIDI clip. A built-in dual-oscillator synth with its own filter/envelope/LFO/mixer
-section lets you preview everything through actual sound rather than silent drag-and-drop. Undo/redo
-covers every one of these surfaces at once.
+**Chords Theory** is a JUCE synth plugin that turns music theory into both sound and draggable MIDI: pick a key and a scale, browse the diatonic chords for every scale degree (most popular voicing shown by default — click a card to pick a different one), and preview or drag them straight into a DAW. A full piano-roll MIDI editor helps you build a chord progression bar by bar — drop chords in, move/resize/ duplicate notes by hand, loop a region, and drag the whole progression (or any single chord within it) out as a MIDI clip. A built-in dual-oscillator synth with its own filter/envelope/LFO/mixer section lets you preview everything through actual sound rather than silent drag-and-drop. Undo/redo covers every one of these surfaces at once.
 
 Available as Standalone, AU, AUv3, and VST3.
 
@@ -31,7 +24,7 @@ Available as Standalone, AU, AUv3, and VST3.
 ## Features
 
 ### Chords & progressions
-- **Key/Scale browser**: 12 keys × 10 scales (Major, Minor Harmonic/Melodic Minor, the modes, and Minor Blues), each scale degree shown with its most popular chord voicing by default.
+- **Key/Scale browser**: 12 keys × 10 scales (Major, Harmonic Minor/Melodic Minor, the modes, and Minor Blues), each scale degree shown with its most popular chord voicing by default.
 - **Voicing picker**: click any chord card to swap to a different voicing for that degree (7th, 9th, sus, inversions, and more, depending on what's diatonically available).
 - **Drag to DAW**: drag any chord card onto a MIDI/instrument track to insert it as a one-measure clip, closed-voiced near middle C.
 - **MIDI editor**: a scrollable/zoomable piano roll — drop chords onto it bar by bar, then move, resize, or delete individual notes directly. A read-only "chord lane" along the bottom continuously re-detects and re-labels whatever chord each group of notes currently spells, so hand-edited notes never go stale. Drag a selection while holding Shift and release with Shift still down to duplicate it in place; a resizable loop region drives playback from either tab.

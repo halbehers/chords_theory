@@ -1,6 +1,8 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
+
 #include "Audio/ProgressionPlayer.h"
 #include "Component/MidiEditor.h"
 #include "Theory/ChordDatabase.h"
@@ -98,6 +100,22 @@ namespace
     // getTestChord() always resolves to degree I - this just packages that fact for addChordAtBeat
     // calls that don't care about provenance beyond "a real, consistent slot".
     ProgressionSlot testSlot(const Chord& chord) { return { Degree::I, chord.popularityOrder }; }
+
+    // C Major degree I's full voicing list, ascending popularityOrder - [0]="C" (3 notes), [1]=
+    // "Cmaj7" (4 notes), [2]="Cmaj9" (5 notes), per ChordDatabaseTests' own verified list.
+    const std::vector<Chord>& degreeIVoicings()
+    {
+        return ChordDatabase::getInstance().get(Key::C, Scale::Major).findDegree(Degree::I)->chords;
+    }
+
+    std::vector<int> sortedNotePitches(const MidiEditor& editor)
+    {
+        std::vector<int> pitches;
+        for (int i = 0; i < editor.getNoteCount(); ++i)
+            pitches.push_back(*editor.getNoteMidiPitch(i));
+        std::sort(pitches.begin(), pitches.end());
+        return pitches;
+    }
 
     // Double-clicks empty space to add a single note at (beat, pitch) - kDefaultNoteLengthBeats
     // (1.0) long, same mechanism as the "double-click adds a note" test above. Callers pick
@@ -1113,4 +1131,212 @@ TEST_CASE("MidiEditor: arrow keys nudge every selected note by kSnapBeats/one se
     CHECK(editor.keyPressed(juce::KeyPress(juce::KeyPress::downKey)));
     CHECK(*editor.getNoteMidiPitch(0) == 64);
     CHECK(*editor.getNoteMidiPitch(1) == 55);
+}
+
+TEST_CASE("MidiEditor::setKeyAndScale on a pure key change shifts every note by the exact semitone delta", "[MidiEditor][KeyScaleChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord()); // C Major "C" triad: C4-E4-G4 = [60, 64, 67]
+    REQUIRE(sortedNotePitches(editor) == std::vector<int> { 60, 64, 67 });
+
+    editor.setKeyAndScale(Key::D, Scale::Major); // D is 2 semitones above C, same scale
+
+    CHECK(sortedNotePitches(editor) == std::vector<int> { 62, 66, 69 });
+
+    REQUIRE(editor.getChordBlockCount() == 1);
+    REQUIRE(editor.getChordBlockLabel(0).has_value());
+    CHECK(*editor.getChordBlockLabel(0) == "D"); // lane relabels against the new key for free
+}
+
+TEST_CASE("MidiEditor::setKeyAndScale on a scale change remaps a clean chord match, preserving register", "[MidiEditor][KeyScaleChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord()); // C Major "C" triad: [60, 64, 67]
+    REQUIRE(sortedNotePitches(editor) == std::vector<int> { 60, 64, 67 });
+
+    // Move the whole chord up an octave first, to prove the remap preserves whatever register the
+    // notes are actually in rather than resetting to a fresh close-to-middle-C voicing.
+    marqueeSelect(editor, { beatToX(4.0) + 40.f, 200.f }, { beatToX(0.0) - 10.f, 10.f });
+    for (int i = 0; i < 12; ++i)
+        editor.keyPressed(juce::KeyPress(juce::KeyPress::upKey));
+    REQUIRE(sortedNotePitches(editor) == std::vector<int> { 72, 76, 79 });
+
+    // C Major degree I popularityOrder 1 is "C" (C-E-G); C Minor's is "Cm" (C-Eb-G) - same key,
+    // same degree/popularityOrder, same note count, only the third moves down a semitone.
+    editor.setKeyAndScale(Key::C, Scale::Minor);
+
+    CHECK(sortedNotePitches(editor) == std::vector<int> { 72, 75, 79 }); // C-Eb-G, still up an octave
+
+    REQUIRE(editor.getChordBlockLabel(0).has_value());
+    CHECK(*editor.getChordBlockLabel(0) == "Cm");
+}
+
+TEST_CASE("MidiEditor::setKeyAndScale falls back to a plain key-interval shift for a non-diatonic note group", "[MidiEditor][KeyScaleChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    addNoteAt(editor, 1.0, 61); // a lone note - never identifiable as any chord (needs >= 2 tones)
+    REQUIRE(editor.getNoteCount() == 1);
+    REQUIRE(*editor.getNoteMidiPitch(0) == 61);
+
+    editor.setKeyAndScale(Key::D, Scale::Minor); // key AND scale both change
+
+    // Not a recognized chord in the old key/scale to begin with - falls back to the plain
+    // key-interval shift (D is 2 semitones above C) rather than being left untouched.
+    CHECK(*editor.getNoteMidiPitch(0) == 63);
+}
+
+TEST_CASE("MidiEditor::setKeyAndScale falls back to a plain key-interval shift when the new scale has no equivalent voicing", "[MidiEditor][KeyScaleChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord()); // C Major "C" triad (3 notes): [60, 64, 67]
+    REQUIRE(sortedNotePitches(editor) == std::vector<int> { 60, 64, 67 });
+
+    // Same key, so a clean match would need a 0-delta shift - but C Minor Blues' degree I
+    // popularityOrder 1 is "C7" (4 notes), a different note count than the 3-note triad being
+    // transposed, so there's no clean equivalent and this falls back to the (here, zero) plain
+    // key-interval shift instead of inventing a partial voicing.
+    editor.setKeyAndScale(Key::C, Scale::MinorBlues);
+
+    CHECK(sortedNotePitches(editor) == std::vector<int> { 60, 64, 67 }); // unchanged - key didn't move
+}
+
+TEST_CASE("MidiEditor::setKeyAndScale with the same key and scale already set is a no-op", "[MidiEditor][KeyScaleChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    editor.addChordAtBeat(0.0, getTestChord());
+    const auto before = sortedNotePitches(editor);
+
+    RecordingListener listener;
+    editor.addListener(&listener);
+
+    editor.setKeyAndScale(Key::C, Scale::Major); // already the default - nothing actually changes
+
+    CHECK(sortedNotePitches(editor) == before);
+    CHECK(listener.contentChangedCount == 0);
+
+    editor.removeListener(&listener);
+}
+
+TEST_CASE("MidiEditor::updateChordBlocksForVoicingChange replaces a matching block's notes with the new voicing", "[MidiEditor][VoicingChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    const auto& voicings = degreeIVoicings(); // [0]="C" (3 notes), [1]="Cmaj7" (4), [2]="Cmaj9" (5)
+
+    editor.addChordAtBeat(0.0, voicings[0]);
+    REQUIRE(sortedNotePitches(editor) == std::vector<int> { 60, 64, 67 });
+
+    editor.updateChordBlocksForVoicingChange(Degree::I, voicings[0], voicings[1]);
+
+    CHECK(sortedNotePitches(editor) == std::vector<int> { 60, 64, 67, 71 }); // C-E-G-B (Cmaj7)
+    REQUIRE(editor.getChordBlockCount() == 1);
+    REQUIRE(editor.getChordBlockLabel(0).has_value());
+    CHECK(*editor.getChordBlockLabel(0) == "Cmaj7");
+    REQUIRE(editor.getChordBlockSlot(0).has_value());
+    CHECK(*editor.getChordBlockSlot(0) == ProgressionSlot { Degree::I, voicings[1].popularityOrder });
+    CHECK(*editor.getChordBlockStartBeat(0) == Catch::Approx(0.0));
+    CHECK(*editor.getChordBlockLengthBeats(0) == Catch::Approx(kBeatsPerBar));
+
+    // And back down again (4 notes -> 3) - a note-count decrease works the same way.
+    editor.updateChordBlocksForVoicingChange(Degree::I, voicings[1], voicings[0]);
+    CHECK(sortedNotePitches(editor) == std::vector<int> { 60, 64, 67 });
+}
+
+TEST_CASE("MidiEditor::updateChordBlocksForVoicingChange preserves the block's existing register", "[MidiEditor][VoicingChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    const auto& voicings = degreeIVoicings();
+
+    editor.addChordAtBeat(0.0, voicings[0]);
+    marqueeSelect(editor, { beatToX(4.0) + 40.f, 200.f }, { beatToX(0.0) - 10.f, 10.f });
+    for (int i = 0; i < 12; ++i)
+        editor.keyPressed(juce::KeyPress(juce::KeyPress::upKey));
+    REQUIRE(sortedNotePitches(editor) == std::vector<int> { 72, 76, 79 });
+
+    editor.updateChordBlocksForVoicingChange(Degree::I, voicings[0], voicings[1]);
+
+    // Cmaj7 freshly voiced close to middle C would be [60,64,67,71] - anchored instead to the
+    // block's own octave (based around 72), it should land on [72,76,79,83].
+    CHECK(sortedNotePitches(editor) == std::vector<int> { 72, 76, 79, 83 });
+}
+
+TEST_CASE("MidiEditor::updateChordBlocksForVoicingChange updates every block sharing the changed degree/voicing", "[MidiEditor][VoicingChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    const auto& voicings = degreeIVoicings();
+
+    editor.addChordAtBeat(0.0, voicings[0]);
+    editor.addChordAtBeat(MidiEditor::kBeatsPerBar, voicings[0]);
+    REQUIRE(editor.getChordBlockCount() == 2);
+
+    editor.updateChordBlocksForVoicingChange(Degree::I, voicings[0], voicings[1]);
+
+    REQUIRE(editor.getChordBlockCount() == 2);
+    for (int i = 0; i < 2; ++i)
+    {
+        REQUIRE(editor.getChordBlockLabel(i).has_value());
+        CHECK(*editor.getChordBlockLabel(i) == "Cmaj7");
+    }
+    CHECK(editor.getNoteCount() == 8); // 4 notes per block, both replaced
+}
+
+TEST_CASE("MidiEditor::updateChordBlocksForVoicingChange leaves an unrelated block untouched", "[MidiEditor][VoicingChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    const auto& voicings = degreeIVoicings(); // [0]="C", [1]="Cmaj7", [2]="Cmaj9"
+
+    editor.addChordAtBeat(0.0, voicings[0]);                       // degree I, popularityOrder 1
+    editor.addChordAtBeat(MidiEditor::kBeatsPerBar, voicings[1]);  // degree I, popularityOrder 2
+
+    editor.updateChordBlocksForVoicingChange(Degree::I, voicings[0], voicings[2]); // only affects popularityOrder 1
+
+    REQUIRE(editor.getChordBlockCount() == 2);
+
+    const auto labelAt = [&editor](double startBeat) -> std::string
+    {
+        for (int i = 0; i < editor.getChordBlockCount(); ++i)
+            if (editor.getChordBlockStartBeat(i) && *editor.getChordBlockStartBeat(i) == Catch::Approx(startBeat))
+                return editor.getChordBlockLabel(i).value_or("");
+        return "";
+    };
+
+    CHECK(labelAt(0.0) == "Cmaj9");                     // replaced
+    CHECK(labelAt(MidiEditor::kBeatsPerBar) == "Cmaj7"); // untouched
+    CHECK(editor.getNoteCount() == 9); // Cmaj9 (5) + Cmaj7 (4), unchanged
+}
+
+TEST_CASE("MidiEditor::updateChordBlocksForVoicingChange is a no-op when nothing matches", "[MidiEditor][VoicingChange]")
+{
+    MidiEditor editor("test-midi-editor");
+    editor.setBounds(0, 0, 800, 400);
+
+    const auto& voicings = degreeIVoicings();
+
+    editor.addChordAtBeat(0.0, voicings[0]); // degree I, popularityOrder 1 only
+    const auto before = sortedNotePitches(editor);
+
+    // Nothing placed uses popularityOrder 2 ("Cmaj7") at degree I - no block should match.
+    editor.updateChordBlocksForVoicingChange(Degree::I, voicings[1], voicings[2]);
+
+    CHECK(sortedNotePitches(editor) == before);
+    REQUIRE(editor.getChordBlockCount() == 1);
+    REQUIRE(editor.getChordBlockLabel(0).has_value());
+    CHECK(*editor.getChordBlockLabel(0) == "C");
 }

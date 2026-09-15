@@ -154,6 +154,11 @@ void ProgressionEditor::addChordAtBeat(double startBeat, const theory::Chord& ch
     _midiEditor.addChordAtBeat(startBeat, chord);
 }
 
+void ProgressionEditor::updateChordBlocksForVoicingChange(theory::Degree degree, const theory::Chord& oldChord, const theory::Chord& newChord)
+{
+    _midiEditor.updateChordBlocksForVoicingChange(degree, oldChord, newChord);
+}
+
 void ProgressionEditor::addListener(Listener* listener)
 {
     _listeners.push_back(listener);

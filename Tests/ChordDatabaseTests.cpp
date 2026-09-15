@@ -4,6 +4,7 @@
 #include <set>
 
 #include "Theory/ChordDatabase.h"
+#include "Theory/ProgressionSlot.h"
 
 using theory::ChordDatabase;
 using theory::Degree;
@@ -11,6 +12,7 @@ using theory::Key;
 using theory::kNumDegrees;
 using theory::kNumKeys;
 using theory::kNumScales;
+using theory::ProgressionSlot;
 using theory::Scale;
 
 TEST_CASE("ChordDatabase parses without throwing and is reachable via the singleton", "[ChordDatabase]")
@@ -106,4 +108,28 @@ TEST_CASE("ChordDatabase: chord tone note names parse to valid pitch classes", "
             CHECK(pitchClass <= 11);
         }
     }
+}
+
+TEST_CASE("ChordDatabase::resolveChord finds the chord matching a slot's degree and popularityOrder", "[ChordDatabase]")
+{
+    const auto* chord = ChordDatabase::getInstance().resolveChord(Key::C, Scale::Major, ProgressionSlot { Degree::I, 1 });
+
+    REQUIRE(chord != nullptr);
+    CHECK(chord->symbol == "C");
+    CHECK(chord->popularityOrder == 1);
+}
+
+TEST_CASE("ChordDatabase::resolveChord returns nullptr when the degree doesn't exist for that scale", "[ChordDatabase]")
+{
+    // Minor Blues only has I/IV/V - see the "expected degree shape" test above.
+    const auto* chord = ChordDatabase::getInstance().resolveChord(Key::C, Scale::MinorBlues, ProgressionSlot { Degree::II, 1 });
+
+    CHECK(chord == nullptr);
+}
+
+TEST_CASE("ChordDatabase::resolveChord returns nullptr when no chord at that degree has a matching popularityOrder", "[ChordDatabase]")
+{
+    const auto* chord = ChordDatabase::getInstance().resolveChord(Key::C, Scale::Major, ProgressionSlot { Degree::I, 999 });
+
+    CHECK(chord == nullptr);
 }
