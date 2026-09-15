@@ -130,4 +130,16 @@ const KeyScaleData& ChordDatabase::get(Key key, Scale scale) const
     return _index[keyIndex * static_cast<std::size_t>(kNumScales) + scaleIndex];
 }
 
+const Chord* ChordDatabase::resolveChord(Key key, Scale scale, const ProgressionSlot& slot) const
+{
+    const auto* degreeData = get(key, scale).findDegree(slot.degree);
+    if (degreeData == nullptr)
+        return nullptr;
+
+    const auto it = std::find_if(degreeData->chords.begin(), degreeData->chords.end(),
+        [&slot](const Chord& chord) { return chord.popularityOrder == slot.popularityOrder; });
+
+    return it != degreeData->chords.end() ? &(*it) : nullptr;
+}
+
 }

@@ -5,6 +5,7 @@
 #include <cmath>
 #include <limits>
 
+#include "Theory/ChordDatabase.h"
 #include "Theory/ChordIdentifier.h"
 #include "Theory/NoteConvertor.h"
 
@@ -261,10 +262,123 @@ void MidiEditor::clear()
 
 void MidiEditor::setKeyAndScale(theory::Key key, theory::Scale scale)
 {
+    if (key == _currentKey && scale == _currentScale)
+        return;
+
+    transposeNotesToKeyAndScale(_currentKey, _currentScale, key, scale);
+
     _currentKey = key;
     _currentScale = scale;
-    recomputeChordBlocksFromNotes();
+
+    notifyContentChanged();
     repaint();
+}
+
+void MidiEditor::transposeNotesToKeyAndScale(theory::Key oldKey, theory::Scale oldScale, theory::Key newKey, theory::Scale newScale)
+{
+    const auto keyOnlyDelta = static_cast<int>(newKey) - static_cast<int>(oldKey);
+
+    // Same scale: every scale degree moves by exactly the same interval, so a uniform shift is
+    // musically exact and preserves every voicing/inversion/hand-edit perfectly - no chord
+    // identification needed at all.
+    if (oldScale == newScale)
+    {
+        for (auto& note : _notes)
+            note.midiNote += keyOnlyDelta;
+        return;
+    }
+
+    // Scale changed (key may have too): try to remap each detected chord group onto its closest
+    // equivalent (same degree, same popularityOrder voicing) in the new scale, preserving register/
+    // inversion exactly via a per-pitch-class delta. Anything that can't be cleanly mapped (not a
+    // recognized chord to begin with, or no equivalent voicing at that degree in the new scale, or a
+    // different note count) falls back to the same plain key-interval shift a pure key change uses.
+    std::vector<bool> handled(_notes.size(), false);
+    const auto clusters = buildOnsetClusters();
+
+    for (std::size_t clusterIndex = 0; clusterIndex < clusters.size(); ++clusterIndex)
+    {
+        const auto detected = identifyCluster(clusters, clusterIndex, oldKey, oldScale);
+        if (!detected)
+            continue;
+
+        const auto* oldChord = theory::ChordDatabase::getInstance().resolveChord(oldKey, oldScale, detected->slot);
+        const auto* newChord = theory::ChordDatabase::getInstance().resolveChord(newKey, newScale, detected->slot);
+        if (oldChord == nullptr || newChord == nullptr || oldChord->notes.size() != newChord->notes.size())
+            continue; // no clean equivalent - falls through to the plain key-shift pass below
+
+        // Pitch-class -> semitone-delta map, pairing oldChord/newChord tone-for-tone by array index
+        // (Chord::notes preserves chords.json order, so index i is the same chord tone in both).
+        std::array<std::optional<int>, 12> pitchClassDelta {};
+        for (std::size_t i = 0; i < oldChord->notes.size(); ++i)
+        {
+            const auto oldPc = oldChord->notes[i].getPitchClass();
+            const auto newPc = newChord->notes[i].getPitchClass();
+            auto delta = ((newPc - oldPc) % 12 + 12) % 12;
+            if (delta > 6)
+                delta -= 12; // smallest-magnitude signed shift, not always positive
+            pitchClassDelta[static_cast<std::size_t>(oldPc)] = delta;
+        }
+
+        // A cluster's own notes can be a strict subset of the matched chord's full pitch-class set
+        // (the match may have needed a still-ringing note borrowed from an earlier cluster to
+        // complete - see identifyWithMinimalBorrowing above) - every one of THIS cluster's own notes
+        // is still guaranteed an entry, since it's part of the pitch-class set that was matched. The
+        // borrowed note itself belongs to its own earlier cluster's pass, not this one.
+        for (const auto index : clusters[clusterIndex])
+        {
+            auto& note = _notes[static_cast<std::size_t>(index)];
+            const auto pc = ((note.midiNote % 12) + 12) % 12;
+            note.midiNote += pitchClassDelta[static_cast<std::size_t>(pc)].value_or(keyOnlyDelta);
+            handled[static_cast<std::size_t>(index)] = true;
+        }
+    }
+
+    for (std::size_t i = 0; i < _notes.size(); ++i)
+        if (!handled[i])
+            _notes[i].midiNote += keyOnlyDelta;
+}
+
+void MidiEditor::updateChordBlocksForVoicingChange(theory::Degree degree, const theory::Chord& oldChord, const theory::Chord& newChord)
+{
+    recomputeChordBlocksFromNotes(); // defensive: guarantee _chordBlocks reflects the current _notes
+
+    struct Match { double startBeat; double lengthBeats; };
+    std::vector<Match> matches;
+    for (const auto& block : _chordBlocks)
+        if (block.detectedSlot.degree == degree && block.detectedSlot.popularityOrder == oldChord.popularityOrder)
+            matches.push_back({ block.startBeat, block.lengthBeats });
+
+    if (matches.empty())
+        return;
+
+    for (const auto& match : matches)
+    {
+        std::optional<int> oldBassNote;
+        for (const auto& note : _notes)
+            if (note.startBeat >= match.startBeat && note.startBeat < match.startBeat + match.lengthBeats)
+                oldBassNote = oldBassNote ? std::min(*oldBassNote, note.midiNote) : note.midiNote;
+
+        _notes.erase(std::remove_if(_notes.begin(), _notes.end(),
+            [&match](const MidiNoteBlock& note) { return note.startBeat >= match.startBeat && note.startBeat < match.startBeat + match.lengthBeats; }),
+            _notes.end());
+
+        auto voiced = theory::NoteConvertor::voiceChordCloseToMiddleC(newChord);
+        if (oldBassNote.has_value() && !voiced.empty())
+        {
+            // Anchor the fresh voicing's bass to the SAME octave the replaced block's bass note was
+            // in, rather than always resetting near middle C - avoids a jarring register jump when
+            // swapping voicings on a chord that's been moved elsewhere on the piano roll.
+            const auto octaveShift = juce::roundToInt(static_cast<double>(*oldBassNote - voiced.front()) / 12.0) * 12;
+            for (auto& pitch : voiced)
+                pitch += octaveShift;
+        }
+
+        for (const auto pitch : voiced)
+            _notes.push_back({ pitch, match.startBeat, match.lengthBeats });
+    }
+
+    notifyContentChanged();
 }
 
 std::optional<int> MidiEditor::getNoteMidiPitch(int index) const
@@ -419,12 +533,10 @@ void MidiEditor::notifyContentChanged()
         listener->onContentChanged();
 }
 
-void MidiEditor::recomputeChordBlocksFromNotes()
+std::vector<std::vector<int>> MidiEditor::buildOnsetClusters() const
 {
-    _chordBlocks.clear();
-
-    // Phase 1: cluster note indices by onset-time proximity into candidate chord-change boundaries -
-    // sort by startBeat, then sweep: a note joins the current cluster if its own onset falls within
+    // Cluster note indices by onset-time proximity into candidate chord-change boundaries - sort by
+    // startBeat, then sweep: a note joins the current cluster if its own onset falls within
     // kChordOnsetToleranceBeats of that cluster's FIRST onset (a fixed window, not chained note-to-
     // note) - chaining against only the immediately preceding note would let a "staircase" of
     // closely-spaced onsets transitively bridge two genuinely unrelated chords across a much wider
@@ -448,44 +560,64 @@ void MidiEditor::recomputeChordBlocksFromNotes()
         clusters.back().push_back(index);
     }
 
-    // Phase 2: each cluster is a candidate chord at its own boundary (= its first onset). Its pitch
-    // content is that cluster's own notes, plus - only if its own notes alone don't already form a
-    // match - the SMALLEST combination of still-ringing notes from EARLIER clusters (still sounding
-    // exactly at this boundary) that completes one. A still-ringing note (pedal tone, tied note,
-    // long sustain) genuinely contributes to whatever harmony is sounding while it rings, even
-    // though it didn't newly onset here - but an ordinary trailing overlap (the previous chord's own
-    // notes releasing a beat-fraction after this one begins, an everyday consequence of hand-played
-    // or hand-edited timing) must not get dragged in just because it's technically still sounding,
-    // if the new chord already stands complete without it. This is deliberately NOT symmetric (a
-    // later cluster's notes never reach back into an earlier boundary's content) and a note's
-    // sustain length plays no part in Phase 1's boundaries - only in which later boundaries' content
-    // it happens to still overlap and might help complete.
+    return clusters;
+}
+
+std::optional<theory::DetectedChord> MidiEditor::identifyCluster(
+    const std::vector<std::vector<int>>& clusters, std::size_t clusterIndex, theory::Key key, theory::Scale scale) const
+{
+    // Each cluster is a candidate chord at its own boundary (= its first onset). Its pitch content
+    // is that cluster's own notes, plus - only if its own notes alone don't already form a match -
+    // the SMALLEST combination of still-ringing notes from EARLIER clusters (still sounding exactly
+    // at this boundary) that completes one. A still-ringing note (pedal tone, tied note, long
+    // sustain) genuinely contributes to whatever harmony is sounding while it rings, even though it
+    // didn't newly onset here - but an ordinary trailing overlap (the previous chord's own notes
+    // releasing a beat-fraction after this one begins, an everyday consequence of hand-played or
+    // hand-edited timing) must not get dragged in just because it's technically still sounding, if
+    // the new chord already stands complete without it. This is deliberately NOT symmetric (a later
+    // cluster's notes never reach back into an earlier boundary's content) and a note's sustain
+    // length plays no part in Phase 1's boundaries - only in which later boundaries' content it
+    // happens to still overlap and might help complete.
+    const auto& cluster = clusters[clusterIndex];
+    const auto boundary = _notes[static_cast<std::size_t>(cluster.front())].startBeat;
+
+    std::vector<int> ownNotes;
+    for (const auto index : cluster)
+        ownNotes.push_back(_notes[static_cast<std::size_t>(index)].midiNote);
+
+    std::vector<int> borrowCandidates;
+    for (std::size_t earlierClusterIndex = 0; earlierClusterIndex < clusterIndex; ++earlierClusterIndex)
+    {
+        for (const auto index : clusters[earlierClusterIndex])
+        {
+            const auto& note = _notes[static_cast<std::size_t>(index)];
+            if (note.startBeat <= boundary && note.startBeat + note.lengthBeats > boundary)
+                borrowCandidates.push_back(note.midiNote);
+        }
+    }
+
+    return identifyWithMinimalBorrowing(ownNotes, borrowCandidates, key, scale);
+}
+
+void MidiEditor::recomputeChordBlocksFromNotes()
+{
+    _chordBlocks.clear();
+
+    const auto clusters = buildOnsetClusters();
+
     for (std::size_t clusterIndex = 0; clusterIndex < clusters.size(); ++clusterIndex)
     {
         const auto& cluster = clusters[clusterIndex];
         const auto boundary = _notes[static_cast<std::size_t>(cluster.front())].startBeat;
 
-        std::vector<int> ownNotes;
         auto groupEnd = boundary;
         for (const auto index : cluster)
         {
             const auto& note = _notes[static_cast<std::size_t>(index)];
-            ownNotes.push_back(note.midiNote);
             groupEnd = juce::jmax(groupEnd, note.startBeat + note.lengthBeats);
         }
 
-        std::vector<int> borrowCandidates;
-        for (std::size_t earlierClusterIndex = 0; earlierClusterIndex < clusterIndex; ++earlierClusterIndex)
-        {
-            for (const auto index : clusters[earlierClusterIndex])
-            {
-                const auto& note = _notes[static_cast<std::size_t>(index)];
-                if (note.startBeat <= boundary && note.startBeat + note.lengthBeats > boundary)
-                    borrowCandidates.push_back(note.midiNote);
-            }
-        }
-
-        if (const auto detected = identifyWithMinimalBorrowing(ownNotes, borrowCandidates, _currentKey, _currentScale))
+        if (const auto detected = identifyCluster(clusters, clusterIndex, _currentKey, _currentScale))
             _chordBlocks.push_back({ detected->label, boundary, groupEnd - boundary, detected->slot });
     }
 
