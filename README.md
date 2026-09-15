@@ -95,8 +95,8 @@ To install an older version instead of the latest:
 
 ### Building
 
-Dependencies — [JUCE](https://github.com/juce-framework/JUCE) 8.0.14,
-[Catch2](https://github.com/catchorg/Catch2), and Nierika's `nierika_dsp` module — are fetched
+Dependencies — [JUCE](https://github.com/juce-framework/JUCE),
+[Catch2](https://github.com/catchorg/Catch2), and my own [nierika_dsp](https://github.com/halbehers/nierika_dsp) module — are fetched
 automatically via [CPM](https://github.com/cpm-cmake/CPM.cmake) on first configure.
 `USE_LOCAL_NIERIKA_DSP` is `ON` in `CMakeLists.txt`, building against a local `~/Development/nierika_dsp` checkout — flip it `OFF` to use the pinned remote release instead.
 
