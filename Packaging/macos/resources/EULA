@@ -1,5 +1,73 @@
-PLACEHOLDER LICENSE AGREEMENT
+CHORDS THEORY - END-USER LICENSE AGREEMENT
 
-This is a placeholder EULA generated as part of the installer packaging setup.
-Replace this file with your actual end-user license agreement before distributing
-this plugin to anyone outside of local testing.
+Last updated: 2026
+
+This End-User License Agreement ("Agreement") is a legal agreement between you (either an individual
+or a single entity, "You") and Nierika ("Licensor", "we", "us") governing your use of the Chords
+Theory software, including its Standalone application and its AU, AUv3, and VST3 plug-in formats
+(collectively, the "Software").
+
+BY INSTALLING, COPYING, OR OTHERWISE USING THE SOFTWARE, YOU AGREE TO BE BOUND BY THE TERMS OF THIS
+AGREEMENT. IF YOU DO NOT AGREE, DO NOT INSTALL OR USE THE SOFTWARE.
+
+1. LICENSE GRANT
+The Software is offered free of charge. Subject to your compliance with this Agreement, Licensor
+grants you a personal, non-exclusive, non-transferable, revocable, worldwide license to install and
+use the Software, in object code (compiled) form only, for your own music production and creative
+work, on as many devices as you like.
+
+2. OWNERSHIP
+The Software is licensed, not sold. Licensor retains all right, title, and interest in and to the
+Software, including all intellectual property rights therein. This Agreement does not grant you any
+rights to trademarks, service marks, or trade names of Licensor.
+
+3. RESTRICTIONS
+You may not, and may not permit anyone else to:
+  a. reverse engineer, decompile, disassemble, or otherwise attempt to derive the source code of the
+     Software, except to the extent applicable law expressly permits this despite this limitation;
+  b. modify, adapt, translate, or create derivative works based on the Software;
+  c. sell, rent, lease, sublicense, distribute, or otherwise transfer the Software to any third party,
+     whether or not for a fee, except by sharing the official, unmodified distribution obtained from
+     the Software's own GitHub Releases page;
+  d. remove or alter any copyright, trademark, or other proprietary notices contained in the Software.
+
+4. THIRD-PARTY COMPONENTS
+The Software is built using the JUCE framework and other third-party open-source libraries, each
+governed by its own license terms. This Agreement covers your use of the Software as a whole and does
+not modify or supersede those third-party license terms.
+
+5. NO WARRANTY
+THE SOFTWARE IS PROVIDED "AS IS," WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT
+LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+LICENSOR DOES NOT WARRANT THAT THE SOFTWARE WILL BE UNINTERRUPTED, ERROR-FREE, OR COMPATIBLE WITH ANY
+PARTICULAR HARDWARE, OPERATING SYSTEM, OR DIGITAL AUDIO WORKSTATION.
+
+6. LIMITATION OF LIABILITY
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL LICENSOR BE LIABLE FOR ANY
+INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES, OR ANY LOSS OF DATA, PROJECT FILES,
+OR PROFITS, ARISING OUT OF OR RELATED TO YOUR USE OF (OR INABILITY TO USE) THE SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGES. BECAUSE THE SOFTWARE IS PROVIDED FREE OF CHARGE, LICENSOR'S
+ENTIRE AGGREGATE LIABILITY UNDER THIS AGREEMENT SHALL NOT EXCEED ZERO (0) EUROS.
+
+7. TERMINATION
+This Agreement is effective until terminated. Your rights under this Agreement terminate automatically,
+without notice, if you fail to comply with any of its terms. Upon termination, you must stop using the
+Software and delete all copies in your possession.
+
+8. UPDATES
+Licensor may, at its discretion, release updated versions of the Software. This Agreement applies to
+any such updates unless they are accompanied by a separate license.
+
+9. GOVERNING LAW
+This Agreement is governed by the laws of France, without regard to its conflict-of-law principles.
+Any dispute arising out of or relating to this Agreement shall be subject to the exclusive jurisdiction
+of the competent courts of France.
+
+10. CONTACT
+Questions about this Agreement or the Software can be raised via the project's GitHub repository:
+https://github.com/halbehers/chords_theory
+
+11. ENTIRE AGREEMENT
+This Agreement constitutes the entire agreement between you and Licensor regarding the Software and
+supersedes all prior or contemporaneous understandings regarding its subject matter. If any provision
+of this Agreement is held unenforceable, the remaining provisions will continue in full force.

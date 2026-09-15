@@ -165,3 +165,8 @@ Manual verification (not automatable): drag-and-drop into an actual DAW track, a
 ### Developers
 
 Nierika (`halbehers`).
+
+### License
+
+[GNU AGPL-3.0](LICENSE) — required by JUCE's own free-tier license, since this project's compiled
+builds are distributed publicly (see "How to install?" above).
